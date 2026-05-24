@@ -5,9 +5,10 @@
 
 import Foundation
 import HealthKit
+import Observation
 
-@MainActor
-final class HealthKitManager: ObservableObject {
+@Observable
+final class HealthKitManager {
     enum Status: Equatable {
         case idle
         case working
@@ -15,7 +16,7 @@ final class HealthKitManager: ObservableObject {
         case failure(String)
     }
 
-    @Published var status: Status = .idle
+    var status: Status = .idle
 
     private let healthStore = HKHealthStore()
     private let effortType = HKQuantityType(.workoutEffortScore)

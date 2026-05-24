@@ -6,7 +6,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var manager = HealthKitManager()
+    @State private var manager = HealthKitManager()
 
     var body: some View {
         VStack(spacing: 24) {
