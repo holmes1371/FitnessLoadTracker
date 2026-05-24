@@ -84,7 +84,8 @@ final class SyncOrchestrator {
                 WorkoutCandidate(
                     startDate: $0.startDate,
                     duration: $0.duration,
-                    activityType: $0.workoutActivityType
+                    activityType: $0.workoutActivityType,
+                    bundleID: $0.sourceRevision.source.bundleIdentifier
                 )
             }
             switch Matching.findMatch(for: activity, in: candidates) {

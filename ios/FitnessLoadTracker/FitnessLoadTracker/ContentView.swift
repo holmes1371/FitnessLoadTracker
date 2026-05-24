@@ -20,8 +20,6 @@ struct ContentView: View {
 
                 Divider()
 
-                debugButton
-
                 statusView
             }
             .padding()
@@ -122,20 +120,6 @@ struct ContentView: View {
         case .error(let msg):
             Text(msg).foregroundStyle(.red).font(.caption)
         }
-    }
-
-    private var debugButton: some View {
-        Button {
-            Task { await manager.setEffortSevenOnMostRecentWorkout() }
-        } label: {
-            Text("Set effort 7 on most recent workout")
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.gray.opacity(0.4))
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-        .disabled(manager.status == .working)
     }
 
     @ViewBuilder
