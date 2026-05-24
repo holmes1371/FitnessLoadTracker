@@ -52,6 +52,7 @@ final class SyncOrchestrator {
 
             let after = Date(timeIntervalSinceNow: -Double(daysBack) * 86_400)
             let activities = try await client.fetchActivities(accessToken: tokens.accessToken, after: after)
+                .sorted { $0.startDate > $1.startDate }
 
             items = activities.map { Item(id: $0.id, activity: $0, status: .pending) }
 
