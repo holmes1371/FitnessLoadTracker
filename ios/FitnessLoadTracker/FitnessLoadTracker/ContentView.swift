@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var sync = SyncOrchestrator()
     @State private var bgPendingCount = 0
     @State private var bgNextDate: Date?
+    @State private var recentSyncs: [SyncLogEntry] = []
 
     var body: some View {
         ScrollView {
@@ -26,6 +27,8 @@ struct ContentView: View {
 
                 statusView
 
+                recentSyncsSection
+
                 bgStatus
             }
             .padding()
@@ -37,6 +40,7 @@ struct ContentView: View {
             // captured lastError by the time we render the first time).
             BackgroundSync.scheduleNext()
             await refreshBGStatus()
+            recentSyncs = SyncLog.recent()
         }
     }
 
@@ -61,7 +65,11 @@ struct ContentView: View {
                 Text("Connected as \(name)")
                     .foregroundStyle(.green)
                 Button {
-                    Task { await sync.syncRecentActivities(healthKit: manager) }
+                    Task {
+                        await sync.syncRecentActivities(source: .foreground, healthKit: manager)
+                        recentSyncs = SyncLog.recent()
+                        await refreshBGStatus()
+                    }
                 } label: {
                     Text(sync.isSyncing ? "Syncing…" : "Sync now")
                         .padding()
@@ -153,9 +161,49 @@ struct ContentView: View {
         }
     }
 
-    // Debug-only readout so Tom can confirm BG refresh is registered without
-    // waiting for an actual iOS-triggered fire. Removed once #5b lands the
-    // persistent sync log that supersedes this.
+    @ViewBuilder
+    private var recentSyncsSection: some View {
+        if !recentSyncs.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Recent syncs")
+                    .font(.headline)
+                ForEach(recentSyncs) { entry in
+                    HStack(spacing: 8) {
+                        sourcePill(for: entry.source)
+                        Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption)
+                        Spacer()
+                        Text("\(entry.activitiesProcessed) activities")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if entry.perItemErrors > 0 || entry.errorSummary != nil {
+                            Text("⚠")
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    Divider()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func sourcePill(for source: SyncLogEntry.Source) -> some View {
+        let (label, color): (String, Color) = source == .foreground
+            ? ("FG", .blue)
+            : ("BG", .purple)
+        return Text(label)
+            .font(.caption2.bold())
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color)
+            .foregroundStyle(.white)
+            .clipShape(Capsule())
+    }
+
+    // Live BG state — pending request count, next earliest fire time, system
+    // BG refresh permission, last submit error. Complementary to the
+    // historical view in Recent syncs.
     private var bgStatus: some View {
         let next = bgNextDate?.formatted(date: .omitted, time: .shortened) ?? "-"
         let refresh = refreshStatusLabel(UIApplication.shared.backgroundRefreshStatus)

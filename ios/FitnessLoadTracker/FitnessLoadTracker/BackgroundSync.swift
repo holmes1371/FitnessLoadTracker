@@ -59,7 +59,7 @@ enum BackgroundSync {
         let sync = SyncOrchestrator()
 
         let work = Task { @MainActor in
-            await sync.syncRecentActivities(healthKit: healthKit)
+            await sync.syncRecentActivities(source: .background, healthKit: healthKit)
             task.setTaskCompleted(success: sync.errorMessage == nil)
         }
 
