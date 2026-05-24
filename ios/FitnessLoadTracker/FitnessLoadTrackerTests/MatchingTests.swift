@@ -10,7 +10,7 @@ import Testing
 
 @Suite("Matching")
 struct MatchingTests {
-    private static func activity(
+    private func activity(
         sportType: String = "Ride",
         startDate: Date = .test(),
         elapsedTime: Int = 3600
@@ -26,7 +26,7 @@ struct MatchingTests {
         )
     }
 
-    private static func candidate(
+    private func candidate(
         startOffset: TimeInterval = 0,
         durationDelta: TimeInterval = 0,
         type: HKWorkoutActivityType = .cycling
