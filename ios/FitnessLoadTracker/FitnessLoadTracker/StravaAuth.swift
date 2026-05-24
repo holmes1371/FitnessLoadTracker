@@ -41,7 +41,7 @@ final class StravaAuth {
     private static let authorizeURL = URL(string: "https://www.strava.com/oauth/authorize")!
     private static let tokenURL = URL(string: "https://www.strava.com/oauth/token")!
     private static let callbackScheme = "fitnessloadtracker"
-    private static let redirectURI = "fitnessloadtracker://oauth-callback"
+    private static let redirectURI = "fitnessloadtracker://fitnessloadtracker/oauth-callback"
     private static let scope = "activity:read_all"
 
     func authenticate() async throws -> Athlete {
