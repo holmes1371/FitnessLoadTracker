@@ -69,3 +69,9 @@ logs/
 .claude/settings.local.json
 .scratch/
 .tmp/
+
+# Xcode
+**/xcuserdata/
+**/*.xcuserstate
+DerivedData/
+build/
