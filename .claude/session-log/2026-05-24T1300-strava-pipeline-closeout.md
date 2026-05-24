@@ -1,7 +1,7 @@
-# 2026-05-24 — Strava integration pipeline complete, #4 closed
+# 2026-05-24 — Strava integration closed; paid dev account enrolling
 
-- #4 (Strava OAuth + sync) closed and moved to Done; full post-mortem in `completed/4.md`. Three landed PRs: #8 (4a OAuth+Keychain), #9 (4b sync+first test pack), #11 (4c idempotency+atomic write).
-- Test convention codified in CLAUDE.md: per-feature regression pack — Swift in XCTest target via Swift Testing, shell in `<dir>/tests/`. Every feature adds regression tests; agents do NOT smoke-test inline as a substitute.
-- New issue #10 filed (Todo): differentiate "No match" causes in sync UI (UX polish deferred from #4b verification).
-- **Next pickup**: #5 Phase 3 (Background App Refresh). Scope filed; iOS won't honor "exactly midnight" — `BGAppRefreshTask` gives "roughly daily" cadence at iOS's discretion. Free personal team's 7-day re-sign issue will bite weekly; that's when the $99 decision sharpens.
-- Open thread for CLAUDE.md: Tom verifies on working branch *before* PR, so close-out can be agent-authorized on merge (not deferred for separate Tom verification). Current CLAUDE.md assumes test-after-merge; worth a small rewrite of the relevant Session-discipline bullets.
+- #4 (Strava OAuth + sync) closed and moved to Done; full post-mortem in `completed/4.md`. Three landed PRs: #8 (4a OAuth+Keychain), #9 (4b sync+first Swift Testing pack), #11 (4c idempotency+atomic write).
+- Test convention codified in CLAUDE.md: per-feature regression pack — Swift in XCTest target via Swift Testing, shell in `<dir>/tests/`. Agents do NOT smoke-test inline as a substitute.
+- **Apple Developer Program (Individual, paid) enrollment in flight; activation Pending at session end.** Once Active: Tom switches Xcode → Signing & Capabilities → Team dropdown to the new paid team, ⌘R to confirm build, then pastes the new 10-char team ID so the agent commits the `DEVELOPMENT_TEAM` pbxproj diff + rewrites the `design/architecture.md` "Apple Developer / signing" section to reflect the resolved $99 decision. Side effect: first launch on new team will re-prompt HealthKit + Strava auth (Keychain access group changes with team ID).
+- **Next code work: #5 Phase 3 (Background App Refresh).** Code path unblocked on personal team, but better validated once paid team avoids the 7-day cert rotation cliff that breaks BG refresh weekly on personal team.
+- **Open threads:** (a) CLAUDE.md update for verification-cadence (Tom verifies on working branch before PR → agent-authorized close-out on merge — saved as `memory/feedback_verification-cadence.md` until codified); (b) issue #10 UX polish — differentiate "No match" causes in sync.
