@@ -33,21 +33,6 @@ final class HealthKitManager {
         }
     }
 
-    func setEffortSevenOnMostRecentWorkout() async {
-        status = .working
-        do {
-            guard let workout = try await mostRecentWorkout() else {
-                status = .failure("No workouts found in HealthKit.")
-                return
-            }
-            try await writeEffort(7, on: workout)
-            let when = workout.endDate.formatted(date: .abbreviated, time: .shortened)
-            status = .success("Set effort 7 on workout ending \(when).")
-        } catch {
-            status = .failure(error.localizedDescription)
-        }
-    }
-
     func workouts(in range: ClosedRange<Date>) async throws -> [HKWorkout] {
         let datePredicate = HKQuery.predicateForSamples(withStart: range.lowerBound, end: range.upperBound)
         let descriptor = HKSampleQueryDescriptor(
@@ -93,12 +78,4 @@ final class HealthKitManager {
         return try await !descriptor.result(for: healthStore).isEmpty
     }
 
-    private func mostRecentWorkout() async throws -> HKWorkout? {
-        let descriptor = HKSampleQueryDescriptor(
-            predicates: [HKSamplePredicate<HKWorkout>.workout()],
-            sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)],
-            limit: 1
-        )
-        return try await descriptor.result(for: healthStore).first
-    }
 }
