@@ -61,7 +61,6 @@ final class StravaAuth {
             URLQueryItem(name: "scope", value: Self.scope),
         ]
         let authURL = components.url!
-        print("StravaAuth: opening \(authURL.absoluteString)")
 
         let callbackURL: URL = try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
