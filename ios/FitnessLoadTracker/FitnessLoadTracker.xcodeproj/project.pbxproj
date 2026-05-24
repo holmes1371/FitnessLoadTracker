@@ -131,7 +131,7 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(SRCROOT)/FitnessLoadTracker/Secrets.generated.swift",
+				"$(SRCROOT)/FitnessLoadTracker/Secrets.swift",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

@@ -75,6 +75,3 @@ logs/
 **/*.xcuserstate
 DerivedData/
 build/
-
-# Build-generated (do not commit; values come from ios/.env)
-**/Secrets.generated.swift

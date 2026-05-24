@@ -14,7 +14,7 @@ setup() {
     mkdir -p "$TESTDIR/parent/srcroot/FitnessLoadTracker"
     export SRCROOT="$TESTDIR/parent/srcroot"
     ENV_PATH="$TESTDIR/parent/.env"
-    OUT_PATH="$SRCROOT/FitnessLoadTracker/Secrets.generated.swift"
+    OUT_PATH="$SRCROOT/FitnessLoadTracker/Secrets.swift"
 }
 
 teardown() {
