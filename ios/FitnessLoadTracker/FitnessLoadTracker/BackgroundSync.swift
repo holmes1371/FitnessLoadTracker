@@ -14,6 +14,11 @@ enum BackgroundSync {
     static let taskIdentifier = "dev.holmes.fitnessloadtracker.sync"
     static let earliestInterval: TimeInterval = 60 * 60  // 1 hour
 
+    /// Diagnostic surface for the debug readout — captures the last submit
+    /// error so the UI can show why scheduling failed. Removed when the
+    /// debug readout itself goes away in #5b.
+    static var lastError: String?
+
     /// Register the handler. Must be called during app launch (App.init) so
     /// the handler is in place before iOS can ever invoke a queued task.
     static func register() {
@@ -37,9 +42,10 @@ enum BackgroundSync {
         request.earliestBeginDate = Date(timeIntervalSinceNow: earliestInterval)
         do {
             try BGTaskScheduler.shared.submit(request)
+            lastError = nil
         } catch {
-            // Common cases: BG App Refresh disabled in Settings, unsupported
-            // device, simulator. Not fatal — next launch will try again.
+            let ns = error as NSError
+            lastError = "\(ns.domain) \(ns.code) — \(ns.localizedDescription)"
         }
     }
 

@@ -5,6 +5,7 @@
 
 import BackgroundTasks
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @State private var manager = HealthKitManager()
@@ -31,6 +32,10 @@ struct ContentView: View {
         }
         .task {
             await manager.requestAuthorization()
+            // Re-arm so the readout reflects the latest submit attempt
+            // (the App.init schedule runs in parallel and may not have
+            // captured lastError by the time we render the first time).
+            BackgroundSync.scheduleNext()
             await refreshBGStatus()
         }
     }
@@ -153,9 +158,27 @@ struct ContentView: View {
     // persistent sync log that supersedes this.
     private var bgStatus: some View {
         let next = bgNextDate?.formatted(date: .omitted, time: .shortened) ?? "-"
-        return Text("BG: pending=\(bgPendingCount), next=\(next)")
-            .font(.caption.monospaced())
-            .foregroundStyle(.secondary)
+        let refresh = refreshStatusLabel(UIApplication.shared.backgroundRefreshStatus)
+        return VStack(alignment: .leading, spacing: 2) {
+            Text("BG: pending=\(bgPendingCount), next=\(next)")
+            Text("Refresh status: \(refresh)")
+            if let err = BackgroundSync.lastError {
+                Text("Submit error: \(err)")
+                    .foregroundStyle(.red)
+            }
+        }
+        .font(.caption.monospaced())
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func refreshStatusLabel(_ status: UIBackgroundRefreshStatus) -> String {
+        switch status {
+        case .available: return "available"
+        case .denied:    return "denied (toggle Settings → General → Background App Refresh)"
+        case .restricted: return "restricted (parental controls / MDM)"
+        @unknown default: return "unknown"
+        }
     }
 
     private func refreshBGStatus() async {
