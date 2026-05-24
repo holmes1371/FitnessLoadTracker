@@ -4,11 +4,13 @@
 //
 
 import SwiftUI
+import HealthKit
 
 struct ContentView: View {
     @State private var manager = HealthKitManager()
     @State private var strava = StravaConnection()
     @State private var sync = SyncOrchestrator()
+    @State private var showingProbe = false
 
     var body: some View {
         ScrollView {
@@ -22,12 +24,17 @@ struct ContentView: View {
 
                 debugButton
 
+                probeButton
+
                 statusView
             }
             .padding()
         }
         .task {
             await manager.requestAuthorization()
+        }
+        .sheet(isPresented: $showingProbe) {
+            ProbeSheet(manager: manager)
         }
     }
 
@@ -138,6 +145,19 @@ struct ContentView: View {
         .disabled(manager.status == .working)
     }
 
+    private var probeButton: some View {
+        Button {
+            showingProbe = true
+        } label: {
+            Text("POC: Probe HealthKit sources (#12)")
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.purple.opacity(0.7))
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
     @ViewBuilder
     private var statusView: some View {
         switch manager.status {
@@ -161,4 +181,132 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+}
+
+// MARK: - POC probe sheet (#12)
+
+private struct ProbeSheet: View {
+    let manager: HealthKitManager
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var rows: [HealthKitManager.ProbeRow] = []
+    @State private var rowStatus: [UUID: String] = [:]
+    @State private var loadError: String?
+    @State private var loading = true
+
+    var body: some View {
+        NavigationStack {
+            content
+                .navigationTitle("HealthKit probe")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+                .task { await load() }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if loading {
+            ProgressView("Loading last 90 days…")
+        } else if let loadError {
+            ScrollView {
+                Text(loadError)
+                    .foregroundStyle(.red)
+                    .padding()
+            }
+        } else if rows.isEmpty {
+            Text("No workouts in the last 90 days.")
+                .foregroundStyle(.secondary)
+                .padding()
+        } else {
+            List(rows) { row in
+                rowView(row)
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func rowView(_ row: HealthKitManager.ProbeRow) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(activityName(row.workout.workoutActivityType))
+                .font(.subheadline.bold())
+            Text(row.workout.startDate.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Source: \(row.sourceName)")
+                .font(.caption)
+            HStack(spacing: 8) {
+                Text(row.bundleID)
+                    .font(.caption.monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button {
+                    UIPasteboard.general.string = row.bundleID
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+            }
+            HStack {
+                Button(role: .destructive) {
+                    Task { await delete(row) }
+                } label: {
+                    Text("Delete")
+                }
+                .buttonStyle(.bordered)
+
+                if let status = rowStatus[row.id] {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(status.hasPrefix("deleted") ? .green : .red)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func load() async {
+        loading = true
+        loadError = nil
+        do {
+            rows = try await manager.recentWorkoutsWithSource(days: 90)
+        } catch {
+            loadError = error.localizedDescription
+        }
+        loading = false
+    }
+
+    private func delete(_ row: HealthKitManager.ProbeRow) async {
+        do {
+            try await manager.deleteWorkout(row.workout)
+            rowStatus[row.id] = "deleted"
+        } catch {
+            let ns = error as NSError
+            rowStatus[row.id] = "error: \(ns.domain) \(ns.code) — \(ns.localizedDescription)"
+        }
+    }
+
+    private func activityName(_ type: HKWorkoutActivityType) -> String {
+        switch type {
+        case .cycling: return "Cycling"
+        case .running: return "Running"
+        case .walking: return "Walking"
+        case .hiking: return "Hiking"
+        case .swimming: return "Swimming"
+        case .functionalStrengthTraining: return "Functional strength"
+        case .traditionalStrengthTraining: return "Strength"
+        case .yoga: return "Yoga"
+        case .rowing: return "Rowing"
+        case .stairClimbing: return "Stair climbing"
+        case .elliptical: return "Elliptical"
+        case .mixedCardio: return "Mixed cardio"
+        case .highIntensityIntervalTraining: return "HIIT"
+        default: return "Type \(type.rawValue)"
+        }
+    }
 }

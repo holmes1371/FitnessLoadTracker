@@ -24,8 +24,10 @@ final class HealthKitManager {
 
     func requestAuthorization() async {
         do {
+            // workoutType is in `toShare` so the POC probe can call
+            // healthStore.delete(_:) on workouts authored by other apps.
             try await healthStore.requestAuthorization(
-                toShare: [effortType],
+                toShare: [effortType, workoutType],
                 read: [effortType, workoutType]
             )
         } catch {
@@ -55,6 +57,27 @@ final class HealthKitManager {
             sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)]
         )
         return try await descriptor.result(for: healthStore)
+    }
+
+    struct ProbeRow: Identifiable {
+        let workout: HKWorkout
+        let sourceName: String
+        let bundleID: String
+        var id: UUID { workout.uuid }
+    }
+
+    func recentWorkoutsWithSource(days: Int) async throws -> [ProbeRow] {
+        let end = Date()
+        let start = Calendar.current.date(byAdding: .day, value: -days, to: end) ?? end
+        let workouts = try await workouts(in: start...end)
+        return workouts.map { workout in
+            let src = workout.sourceRevision.source
+            return ProbeRow(workout: workout, sourceName: src.name, bundleID: src.bundleIdentifier)
+        }
+    }
+
+    func deleteWorkout(_ workout: HKWorkout) async throws {
+        try await healthStore.delete([workout])
     }
 
     func writeEffort(_ value: Double, on workout: HKWorkout) async throws {
