@@ -21,13 +21,20 @@ final class HealthKitManager: ObservableObject {
     private let effortType = HKQuantityType(.workoutEffortScore)
     private let workoutType = HKWorkoutType.workoutType()
 
-    func setEffortSevenOnMostRecentWorkout() async {
-        status = .working
+    func requestAuthorization() async {
         do {
             try await healthStore.requestAuthorization(
                 toShare: [effortType],
                 read: [effortType, workoutType]
             )
+        } catch {
+            status = .failure("Authorization error: \(error.localizedDescription)")
+        }
+    }
+
+    func setEffortSevenOnMostRecentWorkout() async {
+        status = .working
+        do {
             guard let workout = try await mostRecentWorkout() else {
                 status = .failure("No workouts found in HealthKit.")
                 return

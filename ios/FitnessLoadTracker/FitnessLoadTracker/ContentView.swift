@@ -28,6 +28,9 @@ struct ContentView: View {
             statusView
         }
         .padding()
+        .task {
+            await manager.requestAuthorization()
+        }
     }
 
     @ViewBuilder
