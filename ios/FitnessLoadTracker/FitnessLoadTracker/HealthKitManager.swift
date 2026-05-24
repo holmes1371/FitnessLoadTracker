@@ -65,7 +65,32 @@ final class HealthKitManager {
             end: workout.endDate
         )
         try await healthStore.save(sample)
-        try await healthStore.relateWorkoutEffortSample(sample, with: workout, activity: nil)
+        do {
+            try await healthStore.relateWorkoutEffortSample(sample, with: workout, activity: nil)
+        } catch {
+            // Honor the hard rule: an effort sample only exists when linked to a
+            // workout. If linking fails, clean up the orphan before propagating.
+            try? await healthStore.delete([sample])
+            throw error
+        }
+    }
+
+    func hasEffortScore(for workout: HKWorkout) async throws -> Bool {
+        let relatedPredicate = HKQuery.predicateForWorkoutEffortSamplesRelated(
+            workout: workout,
+            activity: nil
+        )
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [
+                HKSamplePredicate<HKQuantitySample>.quantitySample(
+                    type: effortType,
+                    predicate: relatedPredicate
+                )
+            ],
+            sortDescriptors: [],
+            limit: 1
+        )
+        return try await !descriptor.result(for: healthStore).isEmpty
     }
 
     private func mostRecentWorkout() async throws -> HKWorkout? {

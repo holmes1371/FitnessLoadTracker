@@ -15,6 +15,7 @@ final class SyncOrchestrator {
         case skippedNoSufferScore
         case skippedNoMatch
         case skippedMultipleMatches
+        case skippedAlreadyHasEffort
         case error(String)
     }
 
@@ -88,8 +89,13 @@ final class SyncOrchestrator {
             }
             switch Matching.findMatch(for: activity, in: candidates) {
             case .matched(let i):
-                try await healthKit.writeEffort(effort, on: workouts[i])
-                items[itemIndex].status = .written(effort: effort)
+                let workout = workouts[i]
+                if try await healthKit.hasEffortScore(for: workout) {
+                    items[itemIndex].status = .skippedAlreadyHasEffort
+                } else {
+                    try await healthKit.writeEffort(effort, on: workout)
+                    items[itemIndex].status = .written(effort: effort)
+                }
             case .noMatch:
                 items[itemIndex].status = .skippedNoMatch
             case .multipleMatches:

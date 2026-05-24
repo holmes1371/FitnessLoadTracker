@@ -117,6 +117,8 @@ struct ContentView: View {
             Text("No match").foregroundStyle(.secondary)
         case .skippedMultipleMatches:
             Text("Multiple matches").foregroundStyle(.orange)
+        case .skippedAlreadyHasEffort:
+            Text("Already has effort").foregroundStyle(.secondary)
         case .error(let msg):
             Text(msg).foregroundStyle(.red).font(.caption)
         }
