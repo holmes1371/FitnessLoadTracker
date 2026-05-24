@@ -125,11 +125,13 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(SRCROOT)/../.env",
 			);
 			name = "Generate Secrets.swift";
 			outputFileListPaths = (
 			);
 			outputPaths = (
+				"$(SRCROOT)/FitnessLoadTracker/Secrets.generated.swift",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
