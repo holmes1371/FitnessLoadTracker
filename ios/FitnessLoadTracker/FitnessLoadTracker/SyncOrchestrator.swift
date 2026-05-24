@@ -56,6 +56,9 @@ final class SyncOrchestrator {
                 errorSummary: errorMessage,
                 perItemErrors: perItemErrors
             ))
+            // Fire-and-forget — notification dispatch shouldn't block the
+            // sync return. iOS holds the request even if we don't await.
+            Task { await FailureNotifier.evaluate(log: SyncLog.recent()) }
             isSyncing = false
         }
 

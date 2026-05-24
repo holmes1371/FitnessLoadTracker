@@ -35,6 +35,7 @@ struct ContentView: View {
         }
         .task {
             await manager.requestAuthorization()
+            await FailureNotifier.requestAuthorization()
             // Re-arm so the readout reflects the latest submit attempt
             // (the App.init schedule runs in parallel and may not have
             // captured lastError by the time we render the first time).
