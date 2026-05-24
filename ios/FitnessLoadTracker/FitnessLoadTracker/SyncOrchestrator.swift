@@ -35,11 +35,32 @@ final class SyncOrchestrator {
         self.client = client
     }
 
-    func syncRecentActivities(daysBack: Int = 30, healthKit: HealthKitManager) async {
+    func syncRecentActivities(
+        daysBack: Int = 30,
+        source: SyncLogEntry.Source,
+        healthKit: HealthKitManager
+    ) async {
         isSyncing = true
         errorMessage = nil
         items = []
-        defer { isSyncing = false }
+        defer {
+            let perItemErrors = items.filter {
+                if case .error = $0.status { return true }
+                return false
+            }.count
+            SyncLog.append(SyncLogEntry(
+                id: UUID(),
+                timestamp: Date(),
+                source: source,
+                activitiesProcessed: items.count,
+                errorSummary: errorMessage,
+                perItemErrors: perItemErrors
+            ))
+            // Fire-and-forget — notification dispatch shouldn't block the
+            // sync return. iOS holds the request even if we don't await.
+            Task { await FailureNotifier.evaluate(log: SyncLog.recent()) }
+            isSyncing = false
+        }
 
         guard let refreshToken = Keychain.load() else {
             errorMessage = "Not connected to Strava."
@@ -59,6 +80,8 @@ final class SyncOrchestrator {
             for index in items.indices {
                 await process(itemIndex: index, healthKit: healthKit)
             }
+
+            BackgroundSync.scheduleNext()
         } catch {
             errorMessage = error.localizedDescription
         }

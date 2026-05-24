@@ -3,12 +3,17 @@
 //  FitnessLoadTracker
 //
 
+import BackgroundTasks
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @State private var manager = HealthKitManager()
     @State private var strava = StravaConnection()
     @State private var sync = SyncOrchestrator()
+    @State private var bgPendingCount = 0
+    @State private var bgNextDate: Date?
+    @State private var recentSyncs: [SyncLogEntry] = []
 
     var body: some View {
         ScrollView {
@@ -21,11 +26,22 @@ struct ContentView: View {
                 Divider()
 
                 statusView
+
+                recentSyncsSection
+
+                bgStatus
             }
             .padding()
         }
         .task {
             await manager.requestAuthorization()
+            await FailureNotifier.requestAuthorization()
+            // Re-arm so the readout reflects the latest submit attempt
+            // (the App.init schedule runs in parallel and may not have
+            // captured lastError by the time we render the first time).
+            BackgroundSync.scheduleNext()
+            await refreshBGStatus()
+            recentSyncs = SyncLog.recent()
         }
     }
 
@@ -50,7 +66,11 @@ struct ContentView: View {
                 Text("Connected as \(name)")
                     .foregroundStyle(.green)
                 Button {
-                    Task { await sync.syncRecentActivities(healthKit: manager) }
+                    Task {
+                        await sync.syncRecentActivities(source: .foreground, healthKit: manager)
+                        recentSyncs = SyncLog.recent()
+                        await refreshBGStatus()
+                    }
                 } label: {
                     Text(sync.isSyncing ? "Syncing…" : "Sync now")
                         .padding()
@@ -140,6 +160,84 @@ struct ContentView: View {
                 .multilineTextAlignment(.center)
                 .font(.caption)
         }
+    }
+
+    @ViewBuilder
+    private var recentSyncsSection: some View {
+        if !recentSyncs.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Recent syncs")
+                    .font(.headline)
+                ForEach(recentSyncs) { entry in
+                    HStack(spacing: 8) {
+                        sourcePill(for: entry.source)
+                        Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption)
+                        Spacer()
+                        Text("\(entry.activitiesProcessed) activities")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if entry.perItemErrors > 0 || entry.errorSummary != nil {
+                            Text("⚠")
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    Divider()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func sourcePill(for source: SyncLogEntry.Source) -> some View {
+        let (label, color): (String, Color) = source == .foreground
+            ? ("FG", .blue)
+            : ("BG", .purple)
+        return Text(label)
+            .font(.caption2.bold())
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color)
+            .foregroundStyle(.white)
+            .clipShape(Capsule())
+    }
+
+    // Live BG state — pending request count, next earliest fire time, system
+    // BG refresh permission, last submit error. Complementary to the
+    // historical view in Recent syncs.
+    private var bgStatus: some View {
+        let next = bgNextDate?.formatted(date: .omitted, time: .shortened) ?? "-"
+        let refresh = refreshStatusLabel(UIApplication.shared.backgroundRefreshStatus)
+        return VStack(alignment: .leading, spacing: 2) {
+            Text("BG: pending=\(bgPendingCount), next=\(next)")
+            Text("Refresh status: \(refresh)")
+            if let err = BackgroundSync.lastError {
+                Text("Submit error: \(err)")
+                    .foregroundStyle(.red)
+            }
+        }
+        .font(.caption.monospaced())
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func refreshStatusLabel(_ status: UIBackgroundRefreshStatus) -> String {
+        switch status {
+        case .available: return "available"
+        case .denied:    return "denied (toggle Settings → General → Background App Refresh)"
+        case .restricted: return "restricted (parental controls / MDM)"
+        @unknown default: return "unknown"
+        }
+    }
+
+    private func refreshBGStatus() async {
+        let requests = await withCheckedContinuation { continuation in
+            BGTaskScheduler.shared.getPendingTaskRequests { requests in
+                continuation.resume(returning: requests)
+            }
+        }
+        bgPendingCount = requests.count
+        bgNextDate = requests.first?.earliestBeginDate
     }
 }
 

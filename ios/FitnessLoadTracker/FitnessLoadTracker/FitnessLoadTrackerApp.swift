@@ -9,9 +9,16 @@ import SwiftUI
 
 @main
 struct FitnessLoadTrackerApp: App {
+    init() {
+        // Register the BG refresh handler synchronously at launch — iOS
+        // requires this to happen before applicationDidFinishLaunching returns.
+        BackgroundSync.register()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .task { BackgroundSync.scheduleNext() }
         }
     }
 }
