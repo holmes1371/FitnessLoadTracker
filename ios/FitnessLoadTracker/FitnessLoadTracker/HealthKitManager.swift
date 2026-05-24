@@ -40,19 +40,32 @@ final class HealthKitManager {
                 status = .failure("No workouts found in HealthKit.")
                 return
             }
-            let sample = HKQuantitySample(
-                type: effortType,
-                quantity: HKQuantity(unit: .appleEffortScore(), doubleValue: 7),
-                start: workout.endDate,
-                end: workout.endDate
-            )
-            try await healthStore.save(sample)
-            try await healthStore.relateWorkoutEffortSample(sample, with: workout, activity: nil)
+            try await writeEffort(7, on: workout)
             let when = workout.endDate.formatted(date: .abbreviated, time: .shortened)
             status = .success("Set effort 7 on workout ending \(when).")
         } catch {
             status = .failure(error.localizedDescription)
         }
+    }
+
+    func workouts(in range: ClosedRange<Date>) async throws -> [HKWorkout] {
+        let datePredicate = HKQuery.predicateForSamples(withStart: range.lowerBound, end: range.upperBound)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [HKSamplePredicate<HKWorkout>.workout(datePredicate)],
+            sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        return try await descriptor.result(for: healthStore)
+    }
+
+    func writeEffort(_ value: Double, on workout: HKWorkout) async throws {
+        let sample = HKQuantitySample(
+            type: effortType,
+            quantity: HKQuantity(unit: .appleEffortScore(), doubleValue: value),
+            start: workout.endDate,
+            end: workout.endDate
+        )
+        try await healthStore.save(sample)
+        try await healthStore.relateWorkoutEffortSample(sample, with: workout, activity: nil)
     }
 
     private func mostRecentWorkout() async throws -> HKWorkout? {
