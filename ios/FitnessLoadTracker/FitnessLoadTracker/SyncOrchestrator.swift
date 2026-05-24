@@ -59,6 +59,8 @@ final class SyncOrchestrator {
             for index in items.indices {
                 await process(itemIndex: index, healthKit: healthKit)
             }
+
+            BackgroundSync.scheduleNext()
         } catch {
             errorMessage = error.localizedDescription
         }

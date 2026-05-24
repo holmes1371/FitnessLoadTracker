@@ -3,12 +3,15 @@
 //  FitnessLoadTracker
 //
 
+import BackgroundTasks
 import SwiftUI
 
 struct ContentView: View {
     @State private var manager = HealthKitManager()
     @State private var strava = StravaConnection()
     @State private var sync = SyncOrchestrator()
+    @State private var bgPendingCount = 0
+    @State private var bgNextDate: Date?
 
     var body: some View {
         ScrollView {
@@ -21,11 +24,14 @@ struct ContentView: View {
                 Divider()
 
                 statusView
+
+                bgStatus
             }
             .padding()
         }
         .task {
             await manager.requestAuthorization()
+            await refreshBGStatus()
         }
     }
 
@@ -140,6 +146,26 @@ struct ContentView: View {
                 .multilineTextAlignment(.center)
                 .font(.caption)
         }
+    }
+
+    // Debug-only readout so Tom can confirm BG refresh is registered without
+    // waiting for an actual iOS-triggered fire. Removed once #5b lands the
+    // persistent sync log that supersedes this.
+    private var bgStatus: some View {
+        let next = bgNextDate?.formatted(date: .omitted, time: .shortened) ?? "-"
+        return Text("BG: pending=\(bgPendingCount), next=\(next)")
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+    }
+
+    private func refreshBGStatus() async {
+        let requests = await withCheckedContinuation { continuation in
+            BGTaskScheduler.shared.getPendingTaskRequests { requests in
+                continuation.resume(returning: requests)
+            }
+        }
+        bgPendingCount = requests.count
+        bgNextDate = requests.first?.earliestBeginDate
     }
 }
 
