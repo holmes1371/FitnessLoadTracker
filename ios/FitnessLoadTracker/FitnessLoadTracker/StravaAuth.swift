@@ -38,7 +38,7 @@ final class StravaAuth {
         let athlete: Athlete
     }
 
-    private static let authorizeURL = URL(string: "https://www.strava.com/oauth/mobile/authorize")!
+    private static let authorizeURL = URL(string: "https://www.strava.com/oauth/authorize")!
     private static let tokenURL = URL(string: "https://www.strava.com/oauth/token")!
     private static let callbackScheme = "fitnessloadtracker"
     private static let redirectURI = "fitnessloadtracker://oauth-callback"
@@ -61,6 +61,7 @@ final class StravaAuth {
             URLQueryItem(name: "scope", value: Self.scope),
         ]
         let authURL = components.url!
+        print("StravaAuth: opening \(authURL.absoluteString)")
 
         let callbackURL: URL = try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
