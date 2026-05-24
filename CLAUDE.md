@@ -15,7 +15,7 @@ The repo on GitHub is **FitnessLoadTracker** (https://github.com/holmes1371/Fitn
 - **Active backlog**: GitHub Issues at https://github.com/holmes1371/FitnessLoadTracker/issues. Active build target lives in the project board's **In Progress** column; everything else sits in Todo. Board status is the source of truth — **no labels track work state** (no `queued`, no `in-progress`). Project board at https://github.com/users/holmes1371/projects/3 for Kanban view.
 - **Closed items with full post-mortems**: `completed/<issue-number>.md` (e.g. `completed/12.md`). Grep `completed/` to find any closed item: `grep -r 'pattern' completed/`. Read the matching entry before re-deriving decisions on territory that overlaps a closed item.
 - **Per-feature design notes**: `design/*.md`. Each captures scope, locked decisions, and test fixtures for a feature in flight or recently shipped. Read the matching note before starting work on a feature.
-- **Source code**: TBD — path will land once the first slice of Python code is written (likely `src/<package>/` with tests in `tests/`).
+- **Source code**: Native iOS app under `ios/FitnessLoadTracker/`. Xcode project at `ios/FitnessLoadTracker/FitnessLoadTracker.xcodeproj`. Build-time secrets injected from gitignored `ios/.env` by `ios/scripts/generate-secrets.sh` (wired as a pre-Sources `PBXShellScriptBuildPhase`).
 - **Recent session log**: `.claude/session-log/` — one file per session, named `YYYY-MM-DDTHHMM-<branch-slug>.md`. Read the 1–2 most-recent files at session start for cold-pickup state (filenames sort newest-last alphabetically). Per-file design prevents merge conflicts when parallel agents work different branches the same day.
 
 ## Issue-number convention
