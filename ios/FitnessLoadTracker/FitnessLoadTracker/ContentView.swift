@@ -7,11 +7,16 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var manager = HealthKitManager()
+    @State private var strava = StravaConnection()
 
     var body: some View {
         VStack(spacing: 24) {
             Text("FitnessLoadTracker")
                 .font(.title)
+
+            stravaSection
+
+            Divider()
 
             Button {
                 Task { await manager.setEffortSevenOnMostRecentWorkout() }
@@ -30,6 +35,41 @@ struct ContentView: View {
         .padding()
         .task {
             await manager.requestAuthorization()
+        }
+    }
+
+    @ViewBuilder
+    private var stravaSection: some View {
+        switch strava.state {
+        case .disconnected:
+            Button {
+                Task { await strava.connect() }
+            } label: {
+                Text("Connect to Strava")
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.orange)
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        case .connecting:
+            ProgressView("Connecting…")
+        case .connected(let name):
+            VStack(spacing: 8) {
+                Text("Connected as \(name)")
+                    .foregroundStyle(.green)
+                Button("Sync now (coming in #4b)") {}
+                    .disabled(true)
+            }
+        case .failed(let message):
+            VStack(spacing: 8) {
+                Text(message)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                Button("Try again") {
+                    Task { await strava.connect() }
+                }
+            }
         }
     }
 

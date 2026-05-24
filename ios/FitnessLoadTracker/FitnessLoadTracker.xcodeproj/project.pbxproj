@@ -52,6 +52,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = A6BA1E682FC34FAF00C295D8 /* Build configuration list for PBXNativeTarget "FitnessLoadTracker" */;
 			buildPhases = (
+				A6BA1F012FC34FAE00C295D8 /* Generate Secrets.swift */,
 				A6BA1E592FC34FAE00C295D8 /* Sources */,
 				A6BA1E5A2FC34FAE00C295D8 /* Frameworks */,
 				A6BA1E5B2FC34FAE00C295D8 /* Resources */,
@@ -113,6 +114,30 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A6BA1F012FC34FAE00C295D8 /* Generate Secrets.swift */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../.env",
+			);
+			name = "Generate Secrets.swift";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/FitnessLoadTracker/Secrets.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "bash \"$SRCROOT/../scripts/generate-secrets.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A6BA1E592FC34FAE00C295D8 /* Sources */ = {
