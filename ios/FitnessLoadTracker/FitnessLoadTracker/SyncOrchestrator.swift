@@ -12,6 +12,7 @@ final class SyncOrchestrator {
     enum ItemStatus: Equatable {
         case pending
         case written(effort: Double)
+        case writtenAsNew(effort: Double)
         case skippedNoSufferScore
         case skippedNoMatch
         case skippedMultipleMatches
@@ -78,7 +79,7 @@ final class SyncOrchestrator {
             items = activities.map { Item(id: $0.id, activity: $0, status: .pending) }
 
             for index in items.indices {
-                await process(itemIndex: index, healthKit: healthKit)
+                await process(itemIndex: index, healthKit: healthKit, accessToken: tokens.accessToken)
             }
 
             BackgroundSync.scheduleNext()
@@ -87,7 +88,7 @@ final class SyncOrchestrator {
         }
     }
 
-    private func process(itemIndex: Int, healthKit: HealthKitManager) async {
+    private func process(itemIndex: Int, healthKit: HealthKitManager, accessToken: String) async {
         let activity = items[itemIndex].activity
 
         guard let sufferScore = activity.sufferScore else {
@@ -122,7 +123,24 @@ final class SyncOrchestrator {
                     items[itemIndex].status = .written(effort: effort)
                 }
             case .noMatch:
-                items[itemIndex].status = .skippedNoMatch
+                // Matching.findMatch returns .noMatch for two distinct reasons:
+                // (1) sport type isn't in the HK activity-type map; we can't
+                // create a workout either, so stay skipped.
+                // (2) sport type is mapped but no HK twin exists within
+                // tolerance — this is the create-and-attach path.
+                guard Matching.hkActivityType(forStravaSportType: activity.sportType) != nil else {
+                    items[itemIndex].status = .skippedNoMatch
+                    return
+                }
+                let detail = try await client.fetchActivityDetail(accessToken: accessToken, id: activity.id)
+                let streams = try await client.fetchActivityStreams(
+                    accessToken: accessToken,
+                    id: activity.id,
+                    keys: ["heartrate", "time"]
+                )
+                let workout = try await healthKit.writeWorkout(detail: detail, streams: streams)
+                try await healthKit.writeEffort(effort, on: workout)
+                items[itemIndex].status = .writtenAsNew(effort: effort)
             case .multipleMatches:
                 items[itemIndex].status = .skippedMultipleMatches
             }

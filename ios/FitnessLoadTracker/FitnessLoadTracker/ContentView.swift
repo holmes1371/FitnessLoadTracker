@@ -129,6 +129,8 @@ struct ContentView: View {
             Text("…").foregroundStyle(.secondary)
         case .written(let effort):
             Text("Effort \(effort, specifier: "%.0f")").foregroundStyle(.green)
+        case .writtenAsNew(let effort):
+            Text("Created + Effort \(effort, specifier: "%.0f")").foregroundStyle(.green)
         case .skippedNoSufferScore:
             Text("No score").foregroundStyle(.secondary)
         case .skippedNoMatch:
