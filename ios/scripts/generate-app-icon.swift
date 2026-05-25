@@ -29,6 +29,10 @@ let bgBlue = CGColor(red: 0x1E/255.0, green: 0x5F/255.0, blue: 0xBF/255.0, alpha
 ctx.setFillColor(bgBlue)
 ctx.fill(CGRect(x: 0, y: 0, width: SIZE, height: SIZE))
 
+// Lift the bike+rider so it sits centered on the canvas (composition
+// bounds run y=265..913 raw, ~77px below mid; 60 nudges it close to mid).
+ctx.translateBy(x: 0, y: -60)
+
 let black = CGColor(red: 0, green: 0, blue: 0, alpha: 1.0)
 ctx.setStrokeColor(black)
 ctx.setFillColor(black)
