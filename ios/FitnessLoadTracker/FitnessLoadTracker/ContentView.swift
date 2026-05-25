@@ -122,6 +122,17 @@ struct ContentView: View {
         .padding(.top, 8)
     }
 
+    // Filter out `.skippedAlreadyHasEffort` — with the 24h overlap (#24),
+    // a routine Sync re-fetches recent activities and stamps them all
+    // "already has effort". That's pure noise; the Recent syncs section
+    // still shows the full processed count for audit.
+    private var displayItems: [SyncOrchestrator.Item] {
+        sync.items.filter {
+            if case .skippedAlreadyHasEffort = $0.status { return false }
+            return true
+        }
+    }
+
     @ViewBuilder
     private var syncResults: some View {
         if let error = sync.errorMessage {
@@ -129,9 +140,9 @@ struct ContentView: View {
                 .foregroundStyle(.red)
                 .multilineTextAlignment(.center)
         }
-        if !sync.items.isEmpty {
+        if !displayItems.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(sync.items) { item in
+                ForEach(displayItems) { item in
                     HStack {
                         VStack(alignment: .leading) {
                             Text(item.activity.name)
@@ -146,7 +157,24 @@ struct ContentView: View {
                     Divider()
                 }
             }
+        } else if sync.errorMessage == nil, sync.lastSyncFinishedAt != nil {
+            emptySyncMessage
         }
+    }
+
+    @ViewBuilder
+    private var emptySyncMessage: some View {
+        let label: String = {
+            if let last = SyncCheckpoint.load() {
+                return "No new activities since \(last.formatted(date: .abbreviated, time: .shortened))"
+            }
+            return "No new activities."
+        }()
+        Text(label)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
