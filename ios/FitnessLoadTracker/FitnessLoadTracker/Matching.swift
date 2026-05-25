@@ -38,6 +38,8 @@ enum Matching {
             return .hiking
         case "Swim":
             return .swimming
+        case "WeightTraining":
+            return .traditionalStrengthTraining
         default:
             return nil
         }
