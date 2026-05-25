@@ -61,17 +61,32 @@ struct StravaClient {
     }
 
     func fetchActivities(accessToken: String, after: Date) async throws -> [StravaActivity] {
-        var components = URLComponents(url: Self.activitiesURL, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "after", value: String(Int(after.timeIntervalSince1970))),
-            URLQueryItem(name: "per_page", value: "30"),
-        ]
-        var request = URLRequest(url: components.url!)
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        // Loop pages until a partial page (or empty) signals the tail. Without
+        // this, a 30-day window with >per_page rides silently drops the oldest
+        // — and a multi-month backfill can't complete at all. per_page=200 is
+        // Strava's documented max; keeps round-trips down on long backfills.
+        let perPage = 200
+        var all: [StravaActivity] = []
+        var page = 1
+        while true {
+            var components = URLComponents(url: Self.activitiesURL, resolvingAgainstBaseURL: false)!
+            components.queryItems = [
+                URLQueryItem(name: "after", value: String(Int(after.timeIntervalSince1970))),
+                URLQueryItem(name: "per_page", value: String(perPage)),
+                URLQueryItem(name: "page", value: String(page)),
+            ]
+            var request = URLRequest(url: components.url!)
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await session.data(for: request)
-        try Self.ensureSuccess(response)
-        return try Self.decodeActivities(from: data)
+            let (data, response) = try await session.data(for: request)
+            try Self.ensureSuccess(response)
+            let batch = try Self.decodeActivities(from: data)
+            all.append(contentsOf: batch)
+            if batch.count < perPage {
+                return all
+            }
+            page += 1
+        }
     }
 
     static func decodeActivities(from data: Data) throws -> [StravaActivity] {

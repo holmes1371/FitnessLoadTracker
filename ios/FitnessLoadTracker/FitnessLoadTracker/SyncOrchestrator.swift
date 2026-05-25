@@ -41,6 +41,27 @@ final class SyncOrchestrator {
         source: SyncLogEntry.Source,
         healthKit: HealthKitManager
     ) async {
+        let after = Date(timeIntervalSinceNow: -Double(daysBack) * 86_400)
+        await syncActivities(after: after, source: source, healthKit: healthKit)
+    }
+
+    // One-shot multi-page backfill from an explicit start date. Same wire
+    // and side-effect surface as syncRecentActivities — just a different
+    // after-date and (implicitly via fetchActivities pagination) a
+    // potentially much larger result set.
+    func syncBackfill(
+        after: Date,
+        source: SyncLogEntry.Source,
+        healthKit: HealthKitManager
+    ) async {
+        await syncActivities(after: after, source: source, healthKit: healthKit)
+    }
+
+    private func syncActivities(
+        after: Date,
+        source: SyncLogEntry.Source,
+        healthKit: HealthKitManager
+    ) async {
         isSyncing = true
         errorMessage = nil
         items = []
@@ -72,7 +93,6 @@ final class SyncOrchestrator {
             let tokens = try await client.refreshAccessToken(refreshToken: refreshToken)
             try Keychain.save(tokens.refreshToken)
 
-            let after = Date(timeIntervalSinceNow: -Double(daysBack) * 86_400)
             let activities = try await client.fetchActivities(accessToken: tokens.accessToken, after: after)
                 .sorted { $0.startDate > $1.startDate }
 

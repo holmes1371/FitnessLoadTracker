@@ -118,6 +118,22 @@ struct ContentView: View {
                 }
                 .disabled(Int64(debugActivityID) == nil || sync.isSyncing)
             }
+
+            // One-time backfill from 2024-10-10. Removed once the
+            // history is in HK; no longer needed under normal sync.
+            Button("Backfill from 2024-10-10") {
+                Task {
+                    var components = DateComponents()
+                    components.year = 2024
+                    components.month = 10
+                    components.day = 10
+                    let after = Calendar(identifier: .gregorian).date(from: components)!
+                    await sync.syncBackfill(after: after, source: .foreground, healthKit: manager)
+                    recentSyncs = SyncLog.recent()
+                }
+            }
+            .font(.caption)
+            .disabled(sync.isSyncing)
         }
         .padding(.top, 8)
     }
