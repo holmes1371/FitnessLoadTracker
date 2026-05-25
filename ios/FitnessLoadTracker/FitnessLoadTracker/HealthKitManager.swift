@@ -91,7 +91,9 @@ final class HealthKitManager {
 
     // Pure constructor — separated from save() so tests can assert on the
     // built HKWorkout + samples without going through a real HKHealthStore.
-    @available(iOS, deprecated: 17.0, message: "HKWorkout init is deprecated but HKWorkoutBuilder is built for live-recording flows; this writes already-completed Strava activities.")
+    // The HKWorkout init below is deprecated in favor of HKWorkoutBuilder;
+    // the builder requires a real HKHealthStore at construction which kills
+    // this test architecture. Migration tracked in #22.
     static func buildWorkoutData(detail: StravaActivityDetail, streams: StravaStreams) throws -> WorkoutBuild {
         guard let activityType = Matching.hkActivityType(forStravaSportType: detail.sportType) else {
             throw WriteWorkoutError.unmappedSportType(detail.sportType)
