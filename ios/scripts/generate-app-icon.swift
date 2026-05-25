@@ -25,7 +25,8 @@ ctx.translateBy(x: 0, y: SIZE)
 ctx.scaleBy(x: 1, y: -1)
 
 // Jersey blue background.
-ctx.setFillColor(CGColor(red: 0x1E/255.0, green: 0x5F/255.0, blue: 0xBF/255.0, alpha: 1.0))
+let bgBlue = CGColor(red: 0x1E/255.0, green: 0x5F/255.0, blue: 0xBF/255.0, alpha: 1.0)
+ctx.setFillColor(bgBlue)
 ctx.fill(CGRect(x: 0, y: 0, width: SIZE, height: SIZE))
 
 let black = CGColor(red: 0, green: 0, blue: 0, alpha: 1.0)
@@ -82,22 +83,29 @@ stroke({ p in
 // Crankset hub.
 ctx.fillEllipse(in: CGRect(x: bb.x - 22, y: bb.y - 22, width: 44, height: 44))
 
-// Visible crank arm (forward + down).
-let pedal = CGPoint(x: 560, y: 820)
+// Visible crank arm (forward + slightly down — power-stroke position).
+let pedal = CGPoint(x: 610, y: 760)
 stroke({ p in
     p.move(to: bb); p.addLine(to: pedal)
 }, width: 14)
 
 // ── Rider ──
-let hip      = CGPoint(x: 440, y: 470)
-let shoulder = CGPoint(x: 660, y: 360)
-let elbow    = CGPoint(x: 720, y: 430)
-let grip     = CGPoint(x: stemTop.x - 5, y: stemTop.y + 15)
-let knee     = CGPoint(x: 555, y: 620)
-let headC    = CGPoint(x: 735, y: 305)
+let hip      = CGPoint(x: 440, y: 480)
+let shoulder = CGPoint(x: 590, y: 350)
+let elbow    = CGPoint(x: 680, y: 415)
+let grip     = CGPoint(x: stemTop.x + 35, y: stemTop.y + 45)  // on the drops
+let knee     = CGPoint(x: 590, y: 595)
+let headC    = CGPoint(x: 665, y: 320)
 let headR: CGFloat = 55
 
-// Upper leg (thick), lower leg (slightly thinner).
+// Leg halos — blue overstroke first to cut a visible gap through the frame.
+// The black leg redraw covers the halo's interior; the 6px ring left over
+// reads as the leg being clearly in front of the bike. Torso (drawn next)
+// covers the halo at the hip end so the rider-on-saddle junction stays clean.
+ctx.setStrokeColor(bgBlue)
+stroke({ p in p.move(to: hip);  p.addLine(to: knee) },  width: 60)
+stroke({ p in p.move(to: knee); p.addLine(to: pedal) }, width: 44)
+ctx.setStrokeColor(black)
 stroke({ p in p.move(to: hip);  p.addLine(to: knee) },  width: 48)
 stroke({ p in p.move(to: knee); p.addLine(to: pedal) }, width: 32)
 
