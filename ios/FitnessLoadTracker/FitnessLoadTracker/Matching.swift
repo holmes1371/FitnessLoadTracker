@@ -14,7 +14,6 @@ struct WorkoutCandidate: Equatable {
     let startDate: Date
     let duration: TimeInterval
     let activityType: HKWorkoutActivityType
-    let bundleID: String
 }
 
 enum MatchResult: Equatable {
@@ -25,13 +24,6 @@ enum MatchResult: Equatable {
 
 enum Matching {
     static let toleranceSeconds: TimeInterval = 60
-
-    // Peloton's iOS app and Strava's iOS app both write HKWorkouts for the
-    // same indoor ride. When the sync sees exactly this pair as candidates,
-    // prefer Peloton (it carries the Watch HR; Strava's mirror is what Tom
-    // manually deletes). Confirmed via POC on 2026-05-24, see #12.
-    private static let pelotonBundleID = "com.Peloton.PelotonApp"
-    private static let stravaBundleID = "com.strava.stravaride"
 
     static func hkActivityType(forStravaSportType sportType: String) -> HKWorkoutActivityType? {
         switch sportType {
@@ -64,15 +56,7 @@ enum Matching {
         switch matches.count {
         case 0:  return .noMatch
         case 1:  return .matched(index: matches[0].offset)
-        case 2:
-            let bundles = matches.map(\.element.bundleID)
-            if Set(bundles) == [pelotonBundleID, stravaBundleID],
-               let pelotonHit = matches.first(where: { $0.element.bundleID == pelotonBundleID }) {
-                return .matched(index: pelotonHit.offset)
-            }
-            return .multipleMatches
-        default:
-            return .multipleMatches
+        default: return .multipleMatches
         }
     }
 }

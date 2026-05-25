@@ -29,19 +29,14 @@ struct MatchingTests {
     private func candidate(
         startOffset: TimeInterval = 0,
         durationDelta: TimeInterval = 0,
-        type: HKWorkoutActivityType = .cycling,
-        bundleID: String = ""
+        type: HKWorkoutActivityType = .cycling
     ) -> WorkoutCandidate {
         WorkoutCandidate(
             startDate: Date.test().addingTimeInterval(startOffset),
             duration: 3600 + durationDelta,
-            activityType: type,
-            bundleID: bundleID
+            activityType: type
         )
     }
-
-    private let pelotonBundle = "com.Peloton.PelotonApp"
-    private let stravaBundle = "com.strava.stravaride"
 
     @Test("exact match returns matched(index:)")
     func exactMatch() {
@@ -84,67 +79,6 @@ struct MatchingTests {
         let result = Matching.findMatch(
             for: activity(),
             in: [candidate(), candidate(startOffset: 30)]
-        )
-        #expect(result == .multipleMatches)
-    }
-
-    @Test("Peloton + Strava pair resolves to the Peloton candidate")
-    func pelotonStravaTiebreaker() {
-        let result = Matching.findMatch(
-            for: activity(),
-            in: [
-                candidate(bundleID: pelotonBundle),
-                candidate(startOffset: 30, bundleID: stravaBundle),
-            ]
-        )
-        #expect(result == .matched(index: 0))
-    }
-
-    @Test("Strava + Peloton (reverse order) still resolves to Peloton")
-    func pelotonStravaTiebreakerReversed() {
-        let result = Matching.findMatch(
-            for: activity(),
-            in: [
-                candidate(bundleID: stravaBundle),
-                candidate(startOffset: 30, bundleID: pelotonBundle),
-            ]
-        )
-        #expect(result == .matched(index: 1))
-    }
-
-    @Test("two Peloton-sourced candidates still returns multipleMatches")
-    func twoPelotonStaysMultiple() {
-        let result = Matching.findMatch(
-            for: activity(),
-            in: [
-                candidate(bundleID: pelotonBundle),
-                candidate(startOffset: 30, bundleID: pelotonBundle),
-            ]
-        )
-        #expect(result == .multipleMatches)
-    }
-
-    @Test("two Strava-sourced candidates still returns multipleMatches")
-    func twoStravaStaysMultiple() {
-        let result = Matching.findMatch(
-            for: activity(),
-            in: [
-                candidate(bundleID: stravaBundle),
-                candidate(startOffset: 30, bundleID: stravaBundle),
-            ]
-        )
-        #expect(result == .multipleMatches)
-    }
-
-    @Test("Peloton + Strava + third source still returns multipleMatches")
-    func threeWayWithThirdSourceStaysMultiple() {
-        let result = Matching.findMatch(
-            for: activity(),
-            in: [
-                candidate(bundleID: pelotonBundle),
-                candidate(startOffset: 20, bundleID: stravaBundle),
-                candidate(startOffset: 40, bundleID: "com.example.thirdparty"),
-            ]
         )
         #expect(result == .multipleMatches)
     }
