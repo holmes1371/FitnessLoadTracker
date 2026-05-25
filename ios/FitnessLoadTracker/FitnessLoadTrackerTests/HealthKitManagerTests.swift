@@ -10,11 +10,15 @@ import Testing
 
 @Suite("HealthKitManager")
 struct HealthKitManagerTests {
-    @Test("Share set authorizes workouts, effort score, and heart rate")
+    @Test("Share set authorizes every type the builder writes")
     func shareSetContents() {
         #expect(HealthKitManager.shareTypes.contains(HKWorkoutType.workoutType()))
         #expect(HealthKitManager.shareTypes.contains(HKQuantityType(.workoutEffortScore)))
         #expect(HealthKitManager.shareTypes.contains(HKQuantityType(.heartRate)))
+        #expect(HealthKitManager.shareTypes.contains(HKQuantityType(.activeEnergyBurned)))
+        #expect(HealthKitManager.shareTypes.contains(HKQuantityType(.distanceCycling)))
+        #expect(HealthKitManager.shareTypes.contains(HKQuantityType(.distanceWalkingRunning)))
+        #expect(HealthKitManager.shareTypes.contains(HKQuantityType(.distanceSwimming)))
     }
 
     @Test("Read set authorizes workouts and effort score")
@@ -22,30 +26,39 @@ struct HealthKitManagerTests {
         #expect(HealthKitManager.readTypes.contains(HKWorkoutType.workoutType()))
         #expect(HealthKitManager.readTypes.contains(HKQuantityType(.workoutEffortScore)))
     }
+
+    @Test("distanceQuantityType maps each Matching activity type to the right cumulative distance type")
+    func distanceQuantityTypeMapping() {
+        #expect(HealthKitManager.distanceQuantityType(for: .cycling) == HKQuantityType(.distanceCycling))
+        #expect(HealthKitManager.distanceQuantityType(for: .swimming) == HKQuantityType(.distanceSwimming))
+        #expect(HealthKitManager.distanceQuantityType(for: .running) == HKQuantityType(.distanceWalkingRunning))
+        #expect(HealthKitManager.distanceQuantityType(for: .walking) == HKQuantityType(.distanceWalkingRunning))
+        #expect(HealthKitManager.distanceQuantityType(for: .hiking) == HKQuantityType(.distanceWalkingRunning))
+    }
 }
 
-@Suite("HealthKitManager.buildWorkoutData")
-struct HealthKitManagerBuildWorkoutDataTests {
+@Suite("HealthKitManager.buildBlueprint")
+struct HealthKitManagerBuildBlueprintTests {
     private let p = HealthKitManager.customMetadataPrefix
     private let speedUnit = HKUnit.meter().unitDivided(by: .second())
     private let hrUnit = HKUnit.count().unitDivided(by: .minute())
 
-    @Test("builds cycling workout from full detail + HR stream")
+    @Test("builds cycling blueprint from full detail + HR stream")
     func cyclingFullBuild() throws {
         let start = Date(timeIntervalSince1970: 1_780_000_000)
         let detail = makeCyclingDetail(startDate: start)
         let streams = makeHRStream(count: 3600)
 
-        let build = try HealthKitManager.buildWorkoutData(detail: detail, streams: streams)
+        let blueprint = try HealthKitManager.buildBlueprint(detail: detail, streams: streams)
 
-        #expect(build.workout.workoutActivityType == .cycling)
-        #expect(build.workout.startDate == start)
-        #expect(build.workout.duration == TimeInterval(detail.movingTime))
-        #expect(build.workout.endDate == start.addingTimeInterval(TimeInterval(detail.movingTime)))
-        #expect(build.workout.totalDistance == HKQuantity(unit: .meter(), doubleValue: detail.distance))
-        #expect(build.workout.totalEnergyBurned == HKQuantity(unit: .kilocalorie(), doubleValue: detail.calories))
+        #expect(blueprint.activityType == .cycling)
+        #expect(blueprint.startDate == start)
+        #expect(blueprint.duration == TimeInterval(detail.movingTime))
+        #expect(blueprint.endDate == start.addingTimeInterval(TimeInterval(detail.movingTime)))
+        #expect(blueprint.totalDistance == HKQuantity(unit: .meter(), doubleValue: detail.distance))
+        #expect(blueprint.totalEnergyBurned == HKQuantity(unit: .kilocalorie(), doubleValue: detail.calories))
 
-        let md = try #require(build.workout.metadata)
+        let md = blueprint.metadata
         #expect((md[HKMetadataKeyAverageSpeed] as? HKQuantity)?.doubleValue(for: speedUnit) == detail.averageSpeed)
         #expect((md[HKMetadataKeyMaximumSpeed] as? HKQuantity)?.doubleValue(for: speedUnit) == detail.maxSpeed)
         #expect((md[HKMetadataKeyElevationAscended] as? HKQuantity)?.doubleValue(for: .meter()) == detail.totalElevationGain)
@@ -61,12 +74,12 @@ struct HealthKitManagerBuildWorkoutDataTests {
         #expect(md["\(p)deviceName"] as? String == detail.deviceName)
         #expect(md["\(p)stravaWorkoutType"] as? Int == detail.workoutType)
 
-        #expect(build.heartRateSamples.count == 3600)
-        let first = try #require(build.heartRateSamples.first)
+        #expect(blueprint.heartRateSamples.count == 3600)
+        let first = try #require(blueprint.heartRateSamples.first)
         #expect(first.startDate == start)
         #expect(first.endDate == start)
         #expect(first.quantity.doubleValue(for: hrUnit) == 120)
-        let last = try #require(build.heartRateSamples.last)
+        let last = try #require(blueprint.heartRateSamples.last)
         #expect(last.startDate == start.addingTimeInterval(3599))
         #expect(last.quantity.doubleValue(for: hrUnit) == Double(120 + (3599 % 50)))
     }
@@ -99,10 +112,10 @@ struct HealthKitManagerBuildWorkoutDataTests {
         )
         let streams = StravaStreams(heartrate: nil, time: nil)
 
-        let build = try HealthKitManager.buildWorkoutData(detail: detail, streams: streams)
+        let blueprint = try HealthKitManager.buildBlueprint(detail: detail, streams: streams)
 
-        #expect(build.workout.workoutActivityType == .walking)
-        let md = try #require(build.workout.metadata)
+        #expect(blueprint.activityType == .walking)
+        let md = blueprint.metadata
         // First-class metadata always written
         #expect(md[HKMetadataKeyAverageSpeed] != nil)
         #expect(md[HKMetadataKeyElevationAscended] != nil)
@@ -119,7 +132,7 @@ struct HealthKitManagerBuildWorkoutDataTests {
         #expect(md["\(p)kilojoules"] == nil)
         #expect(md["\(p)deviceName"] == nil)
         #expect(md["\(p)stravaWorkoutType"] == nil)
-        #expect(build.heartRateSamples.isEmpty)
+        #expect(blueprint.heartRateSamples.isEmpty)
     }
 
     @Test("produces empty HR samples when stream has no heartrate channel")
@@ -130,9 +143,9 @@ struct HealthKitManagerBuildWorkoutDataTests {
             time: StravaStreams.Stream(data: [0, 1, 2], seriesType: "time", originalSize: 3, resolution: "high")
         )
 
-        let build = try HealthKitManager.buildWorkoutData(detail: detail, streams: streams)
-        #expect(build.heartRateSamples.isEmpty)
-        #expect(build.workout.workoutActivityType == .cycling)
+        let blueprint = try HealthKitManager.buildBlueprint(detail: detail, streams: streams)
+        #expect(blueprint.heartRateSamples.isEmpty)
+        #expect(blueprint.activityType == .cycling)
     }
 
     @Test("throws unmappedSportType for sport types Matching doesn't know")
@@ -140,7 +153,7 @@ struct HealthKitManagerBuildWorkoutDataTests {
         let detail = makeCyclingDetail(startDate: Date(), sportType: "Yoga")
         let streams = StravaStreams(heartrate: nil, time: nil)
         #expect(throws: HealthKitManager.WriteWorkoutError.self) {
-            _ = try HealthKitManager.buildWorkoutData(detail: detail, streams: streams)
+            _ = try HealthKitManager.buildBlueprint(detail: detail, streams: streams)
         }
     }
 

@@ -26,6 +26,10 @@ final class HealthKitManager {
         HKQuantityType(.workoutEffortScore),
         HKWorkoutType.workoutType(),
         HKQuantityType(.heartRate),
+        HKQuantityType(.activeEnergyBurned),
+        HKQuantityType(.distanceCycling),
+        HKQuantityType(.distanceWalkingRunning),
+        HKQuantityType(.distanceSwimming),
     ]
 
     static let readTypes: Set<HKObjectType> = [
@@ -73,28 +77,49 @@ final class HealthKitManager {
 
     enum WriteWorkoutError: LocalizedError {
         case unmappedSportType(String)
+        case builderReturnedNil
 
         var errorDescription: String? {
             switch self {
             case .unmappedSportType(let s):
                 return "No HKWorkoutActivityType mapping for Strava sport type '\(s)'."
+            case .builderReturnedNil:
+                return "HKWorkoutBuilder.finishWorkout returned nil — workout not saved."
             }
         }
     }
 
-    struct WorkoutBuild {
-        let workout: HKWorkout
+    struct WorkoutBlueprint {
+        let activityType: HKWorkoutActivityType
+        let startDate: Date
+        let endDate: Date
+        let duration: TimeInterval
+        let totalDistance: HKQuantity
+        let totalEnergyBurned: HKQuantity
+        let metadata: [String: Any]
         let heartRateSamples: [HKQuantitySample]
     }
 
     static let customMetadataPrefix = "com.holmes.fitnessloadtracker."
 
-    // Pure constructor — separated from save() so tests can assert on the
-    // built HKWorkout + samples without going through a real HKHealthStore.
-    // The HKWorkout init below is deprecated in favor of HKWorkoutBuilder;
-    // the builder requires a real HKHealthStore at construction which kills
-    // this test architecture. Migration tracked in #22.
-    static func buildWorkoutData(detail: StravaActivityDetail, streams: StravaStreams) throws -> WorkoutBuild {
+    // Maps the activity types Matching can produce to the cumulative distance
+    // sample type HKWorkoutBuilder expects. Kept exhaustive over Matching's
+    // output so any future Matching addition forces a decision here.
+    static func distanceQuantityType(for activityType: HKWorkoutActivityType) -> HKQuantityType {
+        switch activityType {
+        case .cycling:
+            return HKQuantityType(.distanceCycling)
+        case .swimming:
+            return HKQuantityType(.distanceSwimming)
+        default:
+            return HKQuantityType(.distanceWalkingRunning)
+        }
+    }
+
+    // Pure constructor — returns all the data writeWorkout will feed into
+    // HKWorkoutBuilder, so tests can assert on the blueprint fields without
+    // going through a real HKHealthStore.
+    static func buildBlueprint(detail: StravaActivityDetail, streams: StravaStreams) throws -> WorkoutBlueprint {
         guard let activityType = Matching.hkActivityType(forStravaSportType: detail.sportType) else {
             throw WriteWorkoutError.unmappedSportType(detail.sportType)
         }
@@ -121,16 +146,6 @@ final class HealthKitManager {
         if let v = detail.deviceName { metadata["\(p)deviceName"] = v }
         if let v = detail.workoutType { metadata["\(p)stravaWorkoutType"] = v }
 
-        let workout = HKWorkout(
-            activityType: activityType,
-            start: startDate,
-            end: endDate,
-            duration: duration,
-            totalEnergyBurned: HKQuantity(unit: .kilocalorie(), doubleValue: detail.calories),
-            totalDistance: HKQuantity(unit: .meter(), doubleValue: detail.distance),
-            metadata: metadata
-        )
-
         var hrSamples: [HKQuantitySample] = []
         if let hr = streams.heartrate, let time = streams.time, !hr.data.isEmpty {
             let hrType = HKQuantityType(.heartRate)
@@ -148,16 +163,49 @@ final class HealthKitManager {
             }
         }
 
-        return WorkoutBuild(workout: workout, heartRateSamples: hrSamples)
+        return WorkoutBlueprint(
+            activityType: activityType,
+            startDate: startDate,
+            endDate: endDate,
+            duration: duration,
+            totalDistance: HKQuantity(unit: .meter(), doubleValue: detail.distance),
+            totalEnergyBurned: HKQuantity(unit: .kilocalorie(), doubleValue: detail.calories),
+            metadata: metadata,
+            heartRateSamples: hrSamples
+        )
     }
 
     func writeWorkout(detail: StravaActivityDetail, streams: StravaStreams) async throws -> HKWorkout {
-        let build = try Self.buildWorkoutData(detail: detail, streams: streams)
-        try await healthStore.save(build.workout)
-        if !build.heartRateSamples.isEmpty {
-            try await healthStore.save(build.heartRateSamples)
+        let blueprint = try Self.buildBlueprint(detail: detail, streams: streams)
+
+        let config = HKWorkoutConfiguration()
+        config.activityType = blueprint.activityType
+
+        let builder = HKWorkoutBuilder(healthStore: healthStore, configuration: config, device: nil)
+        try await builder.beginCollection(at: blueprint.startDate)
+        try await builder.addMetadata(blueprint.metadata)
+
+        let distanceSample = HKQuantitySample(
+            type: Self.distanceQuantityType(for: blueprint.activityType),
+            quantity: blueprint.totalDistance,
+            start: blueprint.startDate,
+            end: blueprint.endDate
+        )
+        let energySample = HKQuantitySample(
+            type: HKQuantityType(.activeEnergyBurned),
+            quantity: blueprint.totalEnergyBurned,
+            start: blueprint.startDate,
+            end: blueprint.endDate
+        )
+        var samples: [HKSample] = [distanceSample, energySample]
+        samples.append(contentsOf: blueprint.heartRateSamples)
+        try await builder.addSamples(samples)
+
+        try await builder.endCollection(at: blueprint.endDate)
+        guard let workout = try await builder.finishWorkout() else {
+            throw WriteWorkoutError.builderReturnedNil
         }
-        return build.workout
+        return workout
     }
 
     func hasEffortScore(for workout: HKWorkout) async throws -> Bool {
