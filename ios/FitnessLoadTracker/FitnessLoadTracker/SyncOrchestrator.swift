@@ -12,6 +12,7 @@ final class SyncOrchestrator {
     enum ItemStatus: Equatable {
         case pending
         case written(effort: Double)
+        case writtenAsNew(effort: Double)
         case skippedNoSufferScore
         case skippedNoMatch
         case skippedMultipleMatches
@@ -37,6 +38,27 @@ final class SyncOrchestrator {
 
     func syncRecentActivities(
         daysBack: Int = 30,
+        source: SyncLogEntry.Source,
+        healthKit: HealthKitManager
+    ) async {
+        let after = Date(timeIntervalSinceNow: -Double(daysBack) * 86_400)
+        await syncActivities(after: after, source: source, healthKit: healthKit)
+    }
+
+    // One-shot multi-page backfill from an explicit start date. Same wire
+    // and side-effect surface as syncRecentActivities — just a different
+    // after-date and (implicitly via fetchActivities pagination) a
+    // potentially much larger result set.
+    func syncBackfill(
+        after: Date,
+        source: SyncLogEntry.Source,
+        healthKit: HealthKitManager
+    ) async {
+        await syncActivities(after: after, source: source, healthKit: healthKit)
+    }
+
+    private func syncActivities(
+        after: Date,
         source: SyncLogEntry.Source,
         healthKit: HealthKitManager
     ) async {
@@ -71,14 +93,13 @@ final class SyncOrchestrator {
             let tokens = try await client.refreshAccessToken(refreshToken: refreshToken)
             try Keychain.save(tokens.refreshToken)
 
-            let after = Date(timeIntervalSinceNow: -Double(daysBack) * 86_400)
             let activities = try await client.fetchActivities(accessToken: tokens.accessToken, after: after)
                 .sorted { $0.startDate > $1.startDate }
 
             items = activities.map { Item(id: $0.id, activity: $0, status: .pending) }
 
             for index in items.indices {
-                await process(itemIndex: index, healthKit: healthKit)
+                await process(itemIndex: index, healthKit: healthKit, accessToken: tokens.accessToken)
             }
 
             BackgroundSync.scheduleNext()
@@ -87,7 +108,65 @@ final class SyncOrchestrator {
         }
     }
 
-    private func process(itemIndex: Int, healthKit: HealthKitManager) async {
+    // Targeted single-activity sync for verification before full-history
+    // backfill. Fetches the detail for `id`, projects to a StravaActivity
+    // summary, and runs the same process() switch a normal sync would —
+    // so matched/noMatch/multipleMatches routing stays consistent across
+    // both entry points.
+    func syncSingleActivity(
+        id: Int64,
+        source: SyncLogEntry.Source,
+        healthKit: HealthKitManager
+    ) async {
+        isSyncing = true
+        errorMessage = nil
+        items = []
+        defer {
+            let perItemErrors = items.filter {
+                if case .error = $0.status { return true }
+                return false
+            }.count
+            SyncLog.append(SyncLogEntry(
+                id: UUID(),
+                timestamp: Date(),
+                source: source,
+                activitiesProcessed: items.count,
+                errorSummary: errorMessage,
+                perItemErrors: perItemErrors
+            ))
+            Task { await FailureNotifier.evaluate(log: SyncLog.recent()) }
+            isSyncing = false
+        }
+
+        guard let refreshToken = Keychain.load() else {
+            errorMessage = "Not connected to Strava."
+            return
+        }
+
+        do {
+            let tokens = try await client.refreshAccessToken(refreshToken: refreshToken)
+            try Keychain.save(tokens.refreshToken)
+
+            let detail = try await client.fetchActivityDetail(accessToken: tokens.accessToken, id: id)
+            let activity = detail.asSummary
+            items = [Item(id: activity.id, activity: activity, status: .pending)]
+            await process(
+                itemIndex: 0,
+                healthKit: healthKit,
+                accessToken: tokens.accessToken,
+                preFetchedDetail: detail
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func process(
+        itemIndex: Int,
+        healthKit: HealthKitManager,
+        accessToken: String,
+        preFetchedDetail: StravaActivityDetail? = nil
+    ) async {
         let activity = items[itemIndex].activity
 
         guard let sufferScore = activity.sufferScore else {
@@ -108,8 +187,7 @@ final class SyncOrchestrator {
                 WorkoutCandidate(
                     startDate: $0.startDate,
                     duration: $0.duration,
-                    activityType: $0.workoutActivityType,
-                    bundleID: $0.sourceRevision.source.bundleIdentifier
+                    activityType: $0.workoutActivityType
                 )
             }
             switch Matching.findMatch(for: activity, in: candidates) {
@@ -122,7 +200,29 @@ final class SyncOrchestrator {
                     items[itemIndex].status = .written(effort: effort)
                 }
             case .noMatch:
-                items[itemIndex].status = .skippedNoMatch
+                // Matching.findMatch returns .noMatch for two distinct reasons:
+                // (1) sport type isn't in the HK activity-type map; we can't
+                // create a workout either, so stay skipped.
+                // (2) sport type is mapped but no HK twin exists within
+                // tolerance — this is the create-and-attach path.
+                guard Matching.hkActivityType(forStravaSportType: activity.sportType) != nil else {
+                    items[itemIndex].status = .skippedNoMatch
+                    return
+                }
+                let detail: StravaActivityDetail
+                if let pre = preFetchedDetail {
+                    detail = pre
+                } else {
+                    detail = try await client.fetchActivityDetail(accessToken: accessToken, id: activity.id)
+                }
+                let streams = try await client.fetchActivityStreams(
+                    accessToken: accessToken,
+                    id: activity.id,
+                    keys: ["heartrate", "time"]
+                )
+                let workout = try await healthKit.writeWorkout(detail: detail, streams: streams)
+                try await healthKit.writeEffort(effort, on: workout)
+                items[itemIndex].status = .writtenAsNew(effort: effort)
             case .multipleMatches:
                 items[itemIndex].status = .skippedMultipleMatches
             }
