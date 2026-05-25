@@ -33,6 +33,12 @@ final class SyncOrchestrator {
     // sync has finished this session. The UI uses this to distinguish
     // "no sync yet" from "sync ran and found nothing" (#24).
     var lastSyncFinishedAt: Date?
+    // Snapshot of SyncCheckpoint.load() taken at the start of the most
+    // recent window-based sync, BEFORE the sync advances the checkpoint.
+    // The empty-state UI reads this — not the live checkpoint — so the
+    // "No new activities since [time]" message shows the previous sync's
+    // time, not the just-completed sync's time (#30).
+    var priorCheckpoint: Date?
 
     private let client: StravaClient
 
@@ -44,7 +50,8 @@ final class SyncOrchestrator {
         source: SyncLogEntry.Source,
         healthKit: HealthKitManager
     ) async {
-        let after = SyncWindow.resolveAfterDate(lastSuccessfulSyncAt: SyncCheckpoint.load())
+        priorCheckpoint = SyncCheckpoint.load()
+        let after = SyncWindow.resolveAfterDate(lastSuccessfulSyncAt: priorCheckpoint)
         await syncActivities(after: after, source: source, healthKit: healthKit)
     }
 
