@@ -165,8 +165,11 @@ struct ContentView: View {
     @ViewBuilder
     private var emptySyncMessage: some View {
         let label: String = {
-            if let last = SyncCheckpoint.load() {
-                return "No new activities since \(last.formatted(date: .abbreviated, time: .shortened))"
+            // Read from the orchestrator's snapshot, NOT SyncCheckpoint.load() —
+            // by the time this renders, the live checkpoint has already
+            // advanced to the just-completed sync's time (#30).
+            if let prior = sync.priorCheckpoint {
+                return "No new activities since \(prior.formatted(date: .abbreviated, time: .shortened))"
             }
             return "No new activities."
         }()
