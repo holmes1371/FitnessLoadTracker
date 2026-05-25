@@ -22,11 +22,22 @@ final class HealthKitManager {
     private let effortType = HKQuantityType(.workoutEffortScore)
     private let workoutType = HKWorkoutType.workoutType()
 
+    static let shareTypes: Set<HKSampleType> = [
+        HKQuantityType(.workoutEffortScore),
+        HKWorkoutType.workoutType(),
+        HKQuantityType(.heartRate),
+    ]
+
+    static let readTypes: Set<HKObjectType> = [
+        HKQuantityType(.workoutEffortScore),
+        HKWorkoutType.workoutType(),
+    ]
+
     func requestAuthorization() async {
         do {
             try await healthStore.requestAuthorization(
-                toShare: [effortType],
-                read: [effortType, workoutType]
+                toShare: Self.shareTypes,
+                read: Self.readTypes
             )
         } catch {
             status = .failure("Authorization error: \(error.localizedDescription)")
