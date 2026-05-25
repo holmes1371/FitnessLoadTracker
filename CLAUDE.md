@@ -6,9 +6,10 @@ The repo on GitHub is **FitnessLoadTracker** (https://github.com/holmes1371/Fitn
 
 ## Session start
 
-1. **Invoke the `karpathy-guidelines` skill** via the Skill tool before writing or editing code. Reading the file from disk does not count — invoke the skill itself. (Skip if the session is pure-research with no code authorship.)
-2. For non-trivial features: state the plan and **wait for explicit user approval** before implementing. Earlier approval in the thread carries across turns only when the current turn is a mechanical continuation of the prior plan.
-3. Read the 1–2 most-recent files in `.claude/session-log/` for cold-pickup state (filenames sort newest-last alphabetically).
+1. **If `ios/.env` is missing in this worktree, symlink it from the parent.** Run `[ -e ios/.env ] || ln -s /Users/tomholmes/DevWork/FitnessLoadTracker/FitnessLoadTracker/ios/.env ios/.env` as the very first thing in any session on a fresh worktree. Without this, Tom's first Xcode build fails at `generate-secrets.sh` and the verification loop stalls. The check is idempotent — safe to run every session; it does nothing when the symlink already exists. (The harness creates a new worktree per branch; the parent worktree's `ios/.env` holds the real secrets and is gitignored, so a symlink — not a copy — is the only correct fix.)
+2. **Invoke the `karpathy-guidelines` skill** via the Skill tool before writing or editing code. Reading the file from disk does not count — invoke the skill itself. (Skip if the session is pure-research with no code authorship.)
+3. For non-trivial features: state the plan and **wait for explicit user approval** before implementing. Earlier approval in the thread carries across turns only when the current turn is a mechanical continuation of the prior plan.
+4. Read the 1–2 most-recent files in `.claude/session-log/` for cold-pickup state (filenames sort newest-last alphabetically).
 
 ## Where things live
 
