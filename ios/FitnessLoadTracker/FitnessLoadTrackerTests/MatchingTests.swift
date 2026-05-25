@@ -105,6 +105,7 @@ struct MatchingTests {
             ("Walk", .walking),
             ("Hike", .hiking),
             ("Swim", .swimming),
+            ("WeightTraining", .traditionalStrengthTraining),
         ]
     )
     func sportTypeMapping(_ stravaType: String, _ expected: HKWorkoutActivityType) {
