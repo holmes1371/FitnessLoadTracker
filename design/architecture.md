@@ -54,7 +54,11 @@ Tom works primarily on a Windows 11 PC. iOS work (Xcode) requires the MacBook Pr
 
 ## Apple Developer / signing
 
-No paid Apple Developer account ($99/yr) for v1. Free personal team. HealthKit capability *should* work with free provisioning (~90% confidence — verified at first Xcode build). Real cost of free: provisioning expires every 7 days; the app stops launching until re-run from Xcode (~30s chore). Decision: start free, validate the architecture, then re-evaluate $99 once we know it works.
+Paid Apple Developer Program membership active (enrolled 2026-05-25, Team ID `Q4B2VW8TUA` — same ID as the prior personal team, since the enrollment converted Tom's existing Apple ID rather than creating a separate org team, so no `DEVELOPMENT_TEAM` pbxproj change was needed). Provisioning profiles now last ~1 year instead of 7 days, so the app no longer needs a weekly Xcode re-run to keep launching.
+
+The weekly re-run had a downstream cost: each forced reinstall wiped the app's Keychain partition, taking the Strava refresh token with it and forcing a re-auth. Token storage itself is fine ([Keychain.swift:29](../ios/FitnessLoadTracker/FitnessLoadTracker/Keychain.swift:29) uses `kSecAttrAccessibleAfterFirstUnlock`); the reset was a side effect of the 7-day cert cycle, not a bug. With paid provisioning, the Strava connection persists.
+
+BG App Refresh stability (the other casualty of weekly cert rotation — task registration was getting reset on reinstall) should also improve organically. Validate in the wild over the coming weeks via the Recent syncs UI shipped with #5.
 
 ## Strava → Apple effort calibration
 
