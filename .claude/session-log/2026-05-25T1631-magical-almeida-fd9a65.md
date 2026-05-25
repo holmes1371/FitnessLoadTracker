@@ -1,8 +1,8 @@
-# 2026-05-25 — #24 incremental sync (implementation, pre-verification)
+# 2026-05-25 — #24 closed (incremental sync via SyncCheckpoint + SyncWindow)
 
 - **#24 in progress.** `SyncCheckpoint` (UserDefaults-backed `Date?`) + `SyncWindow.resolveAfterDate(...)` (pure helper: fresh → `last − 24h overlap`, nil/stale-past-7d → `now − 30d`). `SyncOrchestrator.syncRecentActivities` drops `daysBack:`, computes `after` via the helper, advances the checkpoint only on clean completion (per-item errors don't block). `syncSingleActivity` records SyncLog + `lastSyncFinishedAt` but does NOT advance the checkpoint — a targeted fetch shouldn't move the full-window watermark.
 - **UI**: new `lastSyncFinishedAt: Date?` on the orchestrator gates the empty-state message ("No new activities since [last checkpoint time]") so it shows only after a sync this session, never on cold open.
 - **Tests**: `SyncCheckpointTests` (round-trip, overwrite, clear) + `SyncWindowTests` (nil → default, fresh → overlap, stale → default, exact-boundary, custom params). Both Swift Testing suites with injectable defaults, mirroring `SyncLogTests`.
 - **Follow-up commit**: filter `.skippedAlreadyHasEffort` items out of the displayed per-item list. The 24h overlap routinely re-fetches the last day's activities and stamps them all "already has effort" — pure noise in the UI. Now collapses to the "no new activities since…" message when nothing actually changed; Recent syncs still shows the full processed count for audit. Other skip kinds (`noMatch`, `noSufferScore`, `multipleMatches`) and errors stay visible.
 - **#28 filed during verification** — 16 pre-existing Swift 6 warnings about main-actor-isolated `Equatable` conformances on `SyncLogEntry`/`FailureNotifier.Decision`/`MatchResult`. Warnings only under Swift 5 mode; tests pass. Orthogonal to #24, parked in Todo.
-- **Status**: branch pushed-pending. Manual verification continues; no PR opened yet — waiting for Tom's "raise it" signal per the working-branch flow.
+- **#24 closed.** Verified on working branch, post-mortem in `completed/24.md`, PR raised with `Closes #24`.
