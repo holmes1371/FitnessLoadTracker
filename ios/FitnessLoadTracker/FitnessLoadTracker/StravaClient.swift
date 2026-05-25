@@ -33,6 +33,7 @@ struct StravaClient {
     private let session: URLSession
     private static let tokenURL = URL(string: "https://www.strava.com/oauth/token")!
     private static let activitiesURL = URL(string: "https://www.strava.com/api/v3/athlete/activities")!
+    private static let activityDetailBaseURL = URL(string: "https://www.strava.com/api/v3/activities/")!
 
     init(session: URLSession = .shared) {
         self.session = session
@@ -78,6 +79,26 @@ struct StravaClient {
         decoder.dateDecodingStrategy = .iso8601
         do {
             return try decoder.decode([StravaActivity].self, from: data)
+        } catch {
+            throw ClientError.decodingError(String(describing: error))
+        }
+    }
+
+    func fetchActivityDetail(accessToken: String, id: Int64) async throws -> StravaActivityDetail {
+        let url = Self.activityDetailBaseURL.appendingPathComponent(String(id))
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await session.data(for: request)
+        try Self.ensureSuccess(response)
+        return try Self.decodeActivityDetail(from: data)
+    }
+
+    static func decodeActivityDetail(from data: Data) throws -> StravaActivityDetail {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        do {
+            return try decoder.decode(StravaActivityDetail.self, from: data)
         } catch {
             throw ClientError.decodingError(String(describing: error))
         }
