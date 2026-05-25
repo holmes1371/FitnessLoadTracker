@@ -32,6 +32,7 @@ struct StravaActivityDetail: Decodable, Equatable {
     let maxWatts: Int?
     let weightedAverageWatts: Int?
     let kilojoules: Double?
+    let sufferScore: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -55,5 +56,25 @@ struct StravaActivityDetail: Decodable, Equatable {
         case maxWatts = "max_watts"
         case weightedAverageWatts = "weighted_average_watts"
         case kilojoules
+        case sufferScore = "suffer_score"
+    }
+}
+
+extension StravaActivityDetail {
+    // Project the detail-endpoint response down to the summary-endpoint
+    // shape so callers that already have a Detail (e.g. the targeted
+    // single-activity sync path) can feed it through the existing
+    // matching/orchestration pipeline without a redundant list-endpoint
+    // fetch.
+    var asSummary: StravaActivity {
+        StravaActivity(
+            id: id,
+            name: name,
+            sportType: sportType,
+            startDate: startDate,
+            elapsedTime: elapsedTime,
+            movingTime: movingTime,
+            sufferScore: sufferScore
+        )
     }
 }

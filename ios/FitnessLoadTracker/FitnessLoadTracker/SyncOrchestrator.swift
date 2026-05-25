@@ -88,7 +88,65 @@ final class SyncOrchestrator {
         }
     }
 
-    private func process(itemIndex: Int, healthKit: HealthKitManager, accessToken: String) async {
+    // Targeted single-activity sync for verification before full-history
+    // backfill. Fetches the detail for `id`, projects to a StravaActivity
+    // summary, and runs the same process() switch a normal sync would —
+    // so matched/noMatch/multipleMatches routing stays consistent across
+    // both entry points.
+    func syncSingleActivity(
+        id: Int64,
+        source: SyncLogEntry.Source,
+        healthKit: HealthKitManager
+    ) async {
+        isSyncing = true
+        errorMessage = nil
+        items = []
+        defer {
+            let perItemErrors = items.filter {
+                if case .error = $0.status { return true }
+                return false
+            }.count
+            SyncLog.append(SyncLogEntry(
+                id: UUID(),
+                timestamp: Date(),
+                source: source,
+                activitiesProcessed: items.count,
+                errorSummary: errorMessage,
+                perItemErrors: perItemErrors
+            ))
+            Task { await FailureNotifier.evaluate(log: SyncLog.recent()) }
+            isSyncing = false
+        }
+
+        guard let refreshToken = Keychain.load() else {
+            errorMessage = "Not connected to Strava."
+            return
+        }
+
+        do {
+            let tokens = try await client.refreshAccessToken(refreshToken: refreshToken)
+            try Keychain.save(tokens.refreshToken)
+
+            let detail = try await client.fetchActivityDetail(accessToken: tokens.accessToken, id: id)
+            let activity = detail.asSummary
+            items = [Item(id: activity.id, activity: activity, status: .pending)]
+            await process(
+                itemIndex: 0,
+                healthKit: healthKit,
+                accessToken: tokens.accessToken,
+                preFetchedDetail: detail
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func process(
+        itemIndex: Int,
+        healthKit: HealthKitManager,
+        accessToken: String,
+        preFetchedDetail: StravaActivityDetail? = nil
+    ) async {
         let activity = items[itemIndex].activity
 
         guard let sufferScore = activity.sufferScore else {
@@ -131,7 +189,12 @@ final class SyncOrchestrator {
                     items[itemIndex].status = .skippedNoMatch
                     return
                 }
-                let detail = try await client.fetchActivityDetail(accessToken: accessToken, id: activity.id)
+                let detail: StravaActivityDetail
+                if let pre = preFetchedDetail {
+                    detail = pre
+                } else {
+                    detail = try await client.fetchActivityDetail(accessToken: accessToken, id: activity.id)
+                }
                 let streams = try await client.fetchActivityStreams(
                     accessToken: accessToken,
                     id: activity.id,

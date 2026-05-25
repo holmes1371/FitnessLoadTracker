@@ -33,7 +33,8 @@ struct StravaActivityDetailTests {
             "average_watts": 187.4,
             "max_watts": 612,
             "weighted_average_watts": 201,
-            "kilojoules": 674.6
+            "kilojoules": 674.6,
+            "suffer_score": 87.5
         }
         """.data(using: .utf8)!
 
@@ -57,9 +58,20 @@ struct StravaActivityDetailTests {
         #expect(d.maxWatts == 612)
         #expect(d.weightedAverageWatts == 201)
         #expect(d.kilojoules == 674.6)
+        #expect(d.sufferScore == 87.5)
         // start_date drift between UTC and start_date_local should round-trip
         // independently so step 4 can pick whichever it wants.
         #expect(d.startDate != d.startDateLocal)
+
+        // asSummary projects to the StravaActivity shape consumed by the
+        // matching pipeline.
+        let summary = d.asSummary
+        #expect(summary.id == d.id)
+        #expect(summary.sportType == d.sportType)
+        #expect(summary.startDate == d.startDate)
+        #expect(summary.elapsedTime == d.elapsedTime)
+        #expect(summary.movingTime == d.movingTime)
+        #expect(summary.sufferScore == d.sufferScore)
     }
 
     @Test("tolerates missing optional power/cadence/HR/workout-type fields")
@@ -93,6 +105,7 @@ struct StravaActivityDetailTests {
         #expect(d.maxWatts == nil)
         #expect(d.weightedAverageWatts == nil)
         #expect(d.kilojoules == nil)
+        #expect(d.sufferScore == nil)
     }
 
     @Test("tolerates explicit null on optional fields")
@@ -119,7 +132,8 @@ struct StravaActivityDetailTests {
             "average_watts": null,
             "max_watts": null,
             "weighted_average_watts": null,
-            "kilojoules": null
+            "kilojoules": null,
+            "suffer_score": null
         }
         """.data(using: .utf8)!
 
@@ -127,5 +141,6 @@ struct StravaActivityDetailTests {
         #expect(d.averageHeartrate == nil)
         #expect(d.deviceName == nil)
         #expect(d.averageWatts == nil)
+        #expect(d.sufferScore == nil)
     }
 }

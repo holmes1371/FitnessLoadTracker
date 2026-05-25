@@ -94,7 +94,8 @@ struct HealthKitManagerBuildWorkoutDataTests {
             averageWatts: nil,
             maxWatts: nil,
             weightedAverageWatts: nil,
-            kilojoules: nil
+            kilojoules: nil,
+            sufferScore: nil
         )
         let streams = StravaStreams(heartrate: nil, time: nil)
 
@@ -170,7 +171,8 @@ struct HealthKitManagerBuildWorkoutDataTests {
             averageWatts: 187.4,
             maxWatts: 612,
             weightedAverageWatts: 201,
-            kilojoules: 674.6
+            kilojoules: 674.6,
+            sufferScore: 87.5
         )
     }
 

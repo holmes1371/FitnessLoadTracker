@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var bgPendingCount = 0
     @State private var bgNextDate: Date?
     @State private var recentSyncs: [SyncLogEntry] = []
+    @State private var debugActivityID: String = ""
 
     var body: some View {
         ScrollView {
@@ -82,6 +83,8 @@ struct ContentView: View {
                 .disabled(sync.isSyncing)
 
                 syncResults
+
+                debugSingleActivitySection
             }
         case .failed(let message):
             VStack(spacing: 8) {
@@ -93,6 +96,30 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var debugSingleActivitySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Debug: sync single activity")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+            HStack {
+                TextField("Strava activity ID", text: $debugActivityID)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.numberPad)
+                    .autocorrectionDisabled()
+                Button("Sync") {
+                    guard let id = Int64(debugActivityID) else { return }
+                    Task {
+                        await sync.syncSingleActivity(id: id, source: .foreground, healthKit: manager)
+                        recentSyncs = SyncLog.recent()
+                    }
+                }
+                .disabled(Int64(debugActivityID) == nil || sync.isSyncing)
+            }
+        }
+        .padding(.top, 8)
     }
 
     @ViewBuilder
