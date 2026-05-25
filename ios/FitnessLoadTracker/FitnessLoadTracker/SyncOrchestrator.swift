@@ -29,6 +29,10 @@ final class SyncOrchestrator {
     var items: [Item] = []
     var isSyncing = false
     var errorMessage: String?
+    // Set in the defer of syncActivities/syncSingleActivity; nil until any
+    // sync has finished this session. The UI uses this to distinguish
+    // "no sync yet" from "sync ran and found nothing" (#24).
+    var lastSyncFinishedAt: Date?
 
     private let client: StravaClient
 
@@ -37,11 +41,10 @@ final class SyncOrchestrator {
     }
 
     func syncRecentActivities(
-        daysBack: Int = 30,
         source: SyncLogEntry.Source,
         healthKit: HealthKitManager
     ) async {
-        let after = Date(timeIntervalSinceNow: -Double(daysBack) * 86_400)
+        let after = SyncWindow.resolveAfterDate(lastSuccessfulSyncAt: SyncCheckpoint.load())
         await syncActivities(after: after, source: source, healthKit: healthKit)
     }
 
@@ -65,19 +68,27 @@ final class SyncOrchestrator {
         isSyncing = true
         errorMessage = nil
         items = []
+        lastSyncFinishedAt = nil
         defer {
             let perItemErrors = items.filter {
                 if case .error = $0.status { return true }
                 return false
             }.count
+            let finishedAt = Date()
             SyncLog.append(SyncLogEntry(
                 id: UUID(),
-                timestamp: Date(),
+                timestamp: finishedAt,
                 source: source,
                 activitiesProcessed: items.count,
                 errorSummary: errorMessage,
                 perItemErrors: perItemErrors
             ))
+            // Only advance the checkpoint on clean completion — per-item
+            // errors don't block, since the next sync's overlap covers them.
+            if errorMessage == nil {
+                SyncCheckpoint.save(finishedAt)
+            }
+            lastSyncFinishedAt = finishedAt
             // Fire-and-forget — notification dispatch shouldn't block the
             // sync return. iOS holds the request even if we don't await.
             Task { await FailureNotifier.evaluate(log: SyncLog.recent()) }
@@ -121,19 +132,26 @@ final class SyncOrchestrator {
         isSyncing = true
         errorMessage = nil
         items = []
+        lastSyncFinishedAt = nil
         defer {
             let perItemErrors = items.filter {
                 if case .error = $0.status { return true }
                 return false
             }.count
+            let finishedAt = Date()
             SyncLog.append(SyncLogEntry(
                 id: UUID(),
-                timestamp: Date(),
+                timestamp: finishedAt,
                 source: source,
                 activitiesProcessed: items.count,
                 errorSummary: errorMessage,
                 perItemErrors: perItemErrors
             ))
+            // Targeted single-activity sync — do NOT advance SyncCheckpoint.
+            // Checkpoint tracks "last full window scan completed cleanly";
+            // a one-off fetch by ID would lose ground for the next full
+            // Sync now if it bumped the watermark.
+            lastSyncFinishedAt = finishedAt
             Task { await FailureNotifier.evaluate(log: SyncLog.recent()) }
             isSyncing = false
         }

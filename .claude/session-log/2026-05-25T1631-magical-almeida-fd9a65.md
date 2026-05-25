@@ -1,0 +1,7 @@
+# 2026-05-25 — #24 incremental sync (implementation, pre-verification)
+
+- **#24 in progress.** `SyncCheckpoint` (UserDefaults-backed `Date?`) + `SyncWindow.resolveAfterDate(...)` (pure helper: fresh → `last − 24h overlap`, nil/stale-past-7d → `now − 30d`). `SyncOrchestrator.syncRecentActivities` drops `daysBack:`, computes `after` via the helper, advances the checkpoint only on clean completion (per-item errors don't block). `syncSingleActivity` records SyncLog + `lastSyncFinishedAt` but does NOT advance the checkpoint — a targeted fetch shouldn't move the full-window watermark.
+- **UI**: new `lastSyncFinishedAt: Date?` on the orchestrator gates the empty-state message ("No new activities since [last checkpoint time]") so it shows only after a sync this session, never on cold open.
+- **Tests**: `SyncCheckpointTests` (round-trip, overwrite, clear) + `SyncWindowTests` (nil → default, fresh → overlap, stale → default, exact-boundary, custom params). Both Swift Testing suites with injectable defaults, mirroring `SyncLogTests`.
+- **Status**: branch pushed-pending. Manual verification on the working branch next (the 5 checkboxes on #24). No PR opened yet — waiting for Tom's "raise it" signal per the working-branch flow.
+- **Open consideration**: 30-day default backfill on fresh install was the decision (parity with current behavior); #17's backfill button still covers deeper history. Easy to bump to 90d in `SyncWindow.defaultBackfill` if Tom decides otherwise during verification.

@@ -146,7 +146,24 @@ struct ContentView: View {
                     Divider()
                 }
             }
+        } else if sync.errorMessage == nil, sync.lastSyncFinishedAt != nil {
+            emptySyncMessage
         }
+    }
+
+    @ViewBuilder
+    private var emptySyncMessage: some View {
+        let label: String = {
+            if let last = SyncCheckpoint.load() {
+                return "No new activities since \(last.formatted(date: .abbreviated, time: .shortened))"
+            }
+            return "No new activities."
+        }()
+        Text(label)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
