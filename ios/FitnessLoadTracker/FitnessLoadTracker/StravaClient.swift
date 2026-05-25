@@ -104,6 +104,30 @@ struct StravaClient {
         }
     }
 
+    func fetchActivityStreams(accessToken: String, id: Int64, keys: [String]) async throws -> StravaStreams {
+        let url = URL(string: "https://www.strava.com/api/v3/activities/\(id)/streams")!
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "keys", value: keys.joined(separator: ",")),
+            URLQueryItem(name: "key_by_type", value: "true"),
+        ]
+        var request = URLRequest(url: components.url!)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await session.data(for: request)
+        try Self.ensureSuccess(response)
+        return try Self.decodeStreams(from: data)
+    }
+
+    static func decodeStreams(from data: Data) throws -> StravaStreams {
+        let decoder = JSONDecoder()
+        do {
+            return try decoder.decode(StravaStreams.self, from: data)
+        } catch {
+            throw ClientError.decodingError(String(describing: error))
+        }
+    }
+
     private static func ensureSuccess(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else {
             throw ClientError.httpError(0)
