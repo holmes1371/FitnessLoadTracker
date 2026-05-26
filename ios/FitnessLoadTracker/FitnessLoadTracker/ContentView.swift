@@ -229,17 +229,24 @@ struct ContentView: View {
                 Text("Recent syncs")
                     .font(.headline)
                 ForEach(recentSyncs) { entry in
-                    HStack(spacing: 8) {
-                        sourcePill(for: entry.source)
-                        Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption)
-                        Spacer()
-                        Text("\(entry.activitiesProcessed) activities")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if entry.perItemErrors > 0 || entry.errorSummary != nil {
-                            Text("⚠")
-                                .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            sourcePill(for: entry.source)
+                            Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption)
+                            Spacer()
+                            Text("\(entry.activitiesProcessed) activities")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if entry.perItemErrors > 0 || entry.errorSummary != nil {
+                                Text("⚠")
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        if let detail = entry.errorSummary ?? entry.firstItemError {
+                            Text(detail)
+                                .font(.caption2)
+                                .foregroundStyle(.red)
                         }
                     }
                     Divider()

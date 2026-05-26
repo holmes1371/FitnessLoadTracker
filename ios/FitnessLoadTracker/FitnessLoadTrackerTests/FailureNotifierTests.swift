@@ -23,7 +23,8 @@ struct FailureNotifierTests {
             source: .background,
             activitiesProcessed: 0,
             errorSummary: "OAuth refresh failed",
-            perItemErrors: 0
+            perItemErrors: 0,
+            firstItemError: nil
         )
     }
 
@@ -34,7 +35,8 @@ struct FailureNotifierTests {
             source: .background,
             activitiesProcessed: 4,
             errorSummary: nil,
-            perItemErrors: 0
+            perItemErrors: 0,
+            firstItemError: nil
         )
     }
 

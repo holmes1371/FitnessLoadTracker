@@ -21,7 +21,8 @@ struct SyncLogTests {
         source: SyncLogEntry.Source = .foreground,
         activitiesProcessed: Int = 5,
         errorSummary: String? = nil,
-        perItemErrors: Int = 0
+        perItemErrors: Int = 0,
+        firstItemError: String? = nil
     ) -> SyncLogEntry {
         SyncLogEntry(
             id: UUID(),
@@ -29,7 +30,8 @@ struct SyncLogTests {
             source: source,
             activitiesProcessed: activitiesProcessed,
             errorSummary: errorSummary,
-            perItemErrors: perItemErrors
+            perItemErrors: perItemErrors,
+            firstItemError: firstItemError
         )
     }
 
@@ -91,10 +93,25 @@ struct SyncLogTests {
     @Test("error fields survive round-trip")
     func errorFieldsCodable() {
         let defaults = freshDefaults()
-        let e = entry(errorSummary: "OAuth failed", perItemErrors: 2)
+        let e = entry(errorSummary: "OAuth failed", perItemErrors: 2, firstItemError: "HK unavailable")
         SyncLog.append(e, to: defaults)
         let result = SyncLog.recent(from: defaults)
         #expect(result[0].errorSummary == "OAuth failed")
         #expect(result[0].perItemErrors == 2)
+        #expect(result[0].firstItemError == "HK unavailable")
+    }
+
+    // Legacy entries persisted before #32 don't have firstItemError in the
+    // JSON. Optional decoding must default to nil, not throw — or the whole
+    // SyncLog.recent() decode fails and Tom's history disappears.
+    @Test("legacy JSON without firstItemError decodes with nil")
+    func legacyJSONDecodes() throws {
+        let defaults = freshDefaults()
+        let legacy = #"[{"id":"00000000-0000-0000-0000-000000000001","timestamp":770000000.0,"source":"background","activitiesProcessed":3,"errorSummary":null,"perItemErrors":0}]"#
+        defaults.set(legacy.data(using: .utf8), forKey: SyncLog.storageKey)
+        let result = SyncLog.recent(from: defaults)
+        #expect(result.count == 1)
+        #expect(result[0].activitiesProcessed == 3)
+        #expect(result[0].firstItemError == nil)
     }
 }

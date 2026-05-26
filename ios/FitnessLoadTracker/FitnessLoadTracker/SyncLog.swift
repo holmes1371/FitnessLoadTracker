@@ -16,6 +16,11 @@ struct SyncLogEntry: Codable, Identifiable, Equatable {
     let activitiesProcessed: Int
     let errorSummary: String?
     let perItemErrors: Int
+    // First `.error(msg)` status in items, captured at log time. nil when
+    // perItemErrors == 0. Lets the UI surface the actual error string on a
+    // ⚠ row without an Xcode debug session (#32). Optional so existing
+    // persisted entries decode cleanly.
+    let firstItemError: String?
 
     enum Source: String, Codable {
         case foreground
