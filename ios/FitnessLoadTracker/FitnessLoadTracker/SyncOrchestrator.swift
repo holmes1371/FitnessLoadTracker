@@ -81,14 +81,27 @@ final class SyncOrchestrator {
                 if case .error = $0.status { return true }
                 return false
             }.count
+            let firstItemError: String? = items.lazy.compactMap {
+                if case .error(let msg) = $0.status { return msg }
+                return nil
+            }.first
+            // Pure-overlap re-fetches stamp `.skippedAlreadyHasEffort` and
+            // would otherwise misleadingly count toward "activitiesProcessed"
+            // on the Recent syncs row (#32). Other skip kinds still count —
+            // they're signal.
+            let processed = items.filter {
+                if case .skippedAlreadyHasEffort = $0.status { return false }
+                return true
+            }.count
             let finishedAt = Date()
             SyncLog.append(SyncLogEntry(
                 id: UUID(),
                 timestamp: finishedAt,
                 source: source,
-                activitiesProcessed: items.count,
+                activitiesProcessed: processed,
                 errorSummary: errorMessage,
-                perItemErrors: perItemErrors
+                perItemErrors: perItemErrors,
+                firstItemError: firstItemError
             ))
             // Only advance the checkpoint on clean completion — per-item
             // errors don't block, since the next sync's overlap covers them.
@@ -145,14 +158,23 @@ final class SyncOrchestrator {
                 if case .error = $0.status { return true }
                 return false
             }.count
+            let firstItemError: String? = items.lazy.compactMap {
+                if case .error(let msg) = $0.status { return msg }
+                return nil
+            }.first
+            let processed = items.filter {
+                if case .skippedAlreadyHasEffort = $0.status { return false }
+                return true
+            }.count
             let finishedAt = Date()
             SyncLog.append(SyncLogEntry(
                 id: UUID(),
                 timestamp: finishedAt,
                 source: source,
-                activitiesProcessed: items.count,
+                activitiesProcessed: processed,
                 errorSummary: errorMessage,
-                perItemErrors: perItemErrors
+                perItemErrors: perItemErrors,
+                firstItemError: firstItemError
             ))
             // Targeted single-activity sync — do NOT advance SyncCheckpoint.
             // Checkpoint tracks "last full window scan completed cleanly";
