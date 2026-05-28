@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var bgNextDate: Date?
     @State private var recentSyncs: [SyncLogEntry] = []
     @State private var debugActivityID: String = ""
+    @State private var showBackfillConfirm = false
 
     var body: some View {
         ScrollView {
@@ -82,6 +83,8 @@ struct ContentView: View {
                 }
                 .disabled(sync.isSyncing)
 
+                backfillButton
+
                 syncResults
 
                 debugSingleActivitySection
@@ -95,6 +98,42 @@ struct ContentView: View {
                     Task { await strava.connect() }
                 }
             }
+        }
+    }
+
+    // One-shot multi-page sync from two years back. Idempotent — re-running
+    // re-stamps already-done rides as "already has effort" and skips distance
+    // it has already written — so a partial run (e.g. a Strava rate-limit
+    // stop) is safe to resume by tapping again (#37).
+    private var backfillButton: some View {
+        Button {
+            showBackfillConfirm = true
+        } label: {
+            Text("Backfill 2 years")
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color.indigo)
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .disabled(sync.isSyncing)
+        .confirmationDialog(
+            "Backfill the last 2 years from Strava?",
+            isPresented: $showBackfillConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Backfill 2 years") {
+                Task {
+                    let after = Calendar.current.date(byAdding: .year, value: -2, to: Date())
+                        ?? Date(timeIntervalSinceNow: -2 * 365 * 24 * 60 * 60)
+                    await sync.syncBackfill(after: after, source: .foreground, healthKit: manager)
+                    recentSyncs = SyncLog.recent()
+                    await refreshBGStatus()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Adds effort and indoor-ride cycling distance to matched workouts. Safe to re-run.")
         }
     }
 
@@ -187,6 +226,10 @@ struct ContentView: View {
             Text("…").foregroundStyle(.secondary)
         case .written(let effort):
             Text("Effort \(effort, specifier: "%.0f")").foregroundStyle(.green)
+        case .writtenWithDistance(let effort):
+            Text("Effort \(effort, specifier: "%.0f") + dist").foregroundStyle(.green)
+        case .addedDistance:
+            Text("+ Distance").foregroundStyle(.green)
         case .writtenAsNew(let effort):
             Text("Created + Effort \(effort, specifier: "%.0f")").foregroundStyle(.green)
         case .skippedNoSufferScore:

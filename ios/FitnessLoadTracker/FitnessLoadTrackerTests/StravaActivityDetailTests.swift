@@ -71,6 +71,7 @@ struct StravaActivityDetailTests {
         #expect(summary.startDate == d.startDate)
         #expect(summary.elapsedTime == d.elapsedTime)
         #expect(summary.movingTime == d.movingTime)
+        #expect(summary.distance == d.distance)
         #expect(summary.sufferScore == d.sufferScore)
     }
 

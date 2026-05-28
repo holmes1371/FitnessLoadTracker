@@ -35,6 +35,12 @@ final class HealthKitManager {
     static let readTypes: Set<HKObjectType> = [
         HKQuantityType(.workoutEffortScore),
         HKWorkoutType.workoutType(),
+        // Needed by the indoor-ride distance enrichment (#37): the dedup query
+        // and the native-distance check both rely on reading distanceCycling.
+        // Without read access HealthKit silently returns no samples / nil
+        // statistics, which would re-write distance every sync and double-count
+        // outdoor rides that already carry it.
+        HKQuantityType(.distanceCycling),
     ]
 
     func requestAuthorization() async {
@@ -73,6 +79,57 @@ final class HealthKitManager {
             try? await healthStore.delete([sample])
             throw error
         }
+    }
+
+    // Whether the matched workout already carries its own cycling distance
+    // (an outdoor ride from a GPS source). Peloton/indoor rides have none, so
+    // nil/zero statistics is the signal to enrich (#37).
+    func workoutHasNativeCyclingDistance(_ workout: HKWorkout) -> Bool {
+        guard let sum = workout.statistics(for: HKQuantityType(.distanceCycling))?.sumQuantity() else {
+            return false
+        }
+        return sum.doubleValue(for: .meter()) > 0
+    }
+
+    // True if a prior sync already authored a cycling-distance sample over this
+    // window — the idempotency guard for the enrichment. Scoped to our own
+    // source so a GPS app's distance (or Peloton's, if it ever adds one) never
+    // counts as ours.
+    func hasOurCyclingDistance(in range: ClosedRange<Date>) async throws -> Bool {
+        let datePredicate = HKQuery.predicateForSamples(withStart: range.lowerBound, end: range.upperBound)
+        let sourcePredicate = HKQuery.predicateForObjects(from: .default())
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [datePredicate, sourcePredicate])
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [
+                HKSamplePredicate<HKQuantitySample>.quantitySample(
+                    type: HKQuantityType(.distanceCycling),
+                    predicate: predicate
+                )
+            ],
+            sortDescriptors: [],
+            limit: 1
+        )
+        return try await !descriptor.result(for: healthStore).isEmpty
+    }
+
+    // Author a standalone distanceCycling sample for an indoor ride. It can't
+    // attach to the source-app workout (HK only lets an app modify samples it
+    // authored, #12), so it stands alone — feeding Health's Cycling Distance
+    // totals/trends. Stamped with the Strava ID for traceability.
+    func writeCyclingDistance(
+        _ meters: Double,
+        start: Date,
+        end: Date,
+        stravaActivityId: Int64
+    ) async throws {
+        let sample = HKQuantitySample(
+            type: HKQuantityType(.distanceCycling),
+            quantity: HKQuantity(unit: .meter(), doubleValue: meters),
+            start: start,
+            end: end,
+            metadata: ["\(Self.customMetadataPrefix)stravaActivityId": stravaActivityId]
+        )
+        try await healthStore.save(sample)
     }
 
     enum WriteWorkoutError: LocalizedError {

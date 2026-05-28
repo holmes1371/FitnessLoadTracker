@@ -21,10 +21,12 @@ struct HealthKitManagerTests {
         #expect(HealthKitManager.shareTypes.contains(HKQuantityType(.distanceSwimming)))
     }
 
-    @Test("Read set authorizes workouts and effort score")
+    @Test("Read set authorizes workouts, effort score, and cycling distance")
     func readSetContents() {
         #expect(HealthKitManager.readTypes.contains(HKWorkoutType.workoutType()))
         #expect(HealthKitManager.readTypes.contains(HKQuantityType(.workoutEffortScore)))
+        // Distance enrichment dedup + native-distance check read this (#37).
+        #expect(HealthKitManager.readTypes.contains(HKQuantityType(.distanceCycling)))
     }
 
     @Test("distanceQuantityType maps each Matching activity type to the right cumulative distance type")

@@ -19,6 +19,7 @@ struct StravaActivityTests {
             "start_date": "2026-05-20T13:00:00Z",
             "elapsed_time": 3600,
             "moving_time": 3550,
+            "distance": 25340.5,
             "suffer_score": 87.5
         }]
         """.data(using: .utf8)!
@@ -31,6 +32,7 @@ struct StravaActivityTests {
         #expect(a.sportType == "Ride")
         #expect(a.elapsedTime == 3600)
         #expect(a.movingTime == 3550)
+        #expect(a.distance == 25340.5)
         #expect(a.sufferScore == 87.5)
     }
 
@@ -44,6 +46,7 @@ struct StravaActivityTests {
             "start_date": "2026-05-20T13:00:00Z",
             "elapsed_time": 600,
             "moving_time": 600,
+            "distance": 3200.0,
             "suffer_score": null
         }]
         """.data(using: .utf8)!
@@ -62,6 +65,7 @@ struct StravaActivityTests {
             "start_date": "2026-05-21T19:30:00Z",
             "elapsed_time": 1800,
             "moving_time": 1750,
+            "distance": 2100.0,
             "suffer_score": null
         }]
         """.data(using: .utf8)!

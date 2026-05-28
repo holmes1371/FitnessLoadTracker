@@ -12,6 +12,8 @@ final class SyncOrchestrator {
     enum ItemStatus: Equatable {
         case pending
         case written(effort: Double)
+        case writtenWithDistance(effort: Double)
+        case addedDistance
         case writtenAsNew(effort: Double)
         case skippedNoSufferScore
         case skippedNoMatch
@@ -240,12 +242,20 @@ final class SyncOrchestrator {
             switch Matching.findMatch(for: activity, in: candidates) {
             case .matched(let i):
                 let workout = workouts[i]
-                if try await healthKit.hasEffortScore(for: workout) {
-                    items[itemIndex].status = .skippedAlreadyHasEffort
-                } else {
+                // Effort and distance are independent and each idempotent: a
+                // ride synced before #37 already has effort but is still
+                // missing distance, so the effort-dedup must not short-circuit
+                // the distance write (this is the backfill case).
+                let hadEffort = try await healthKit.hasEffortScore(for: workout)
+                if !hadEffort {
                     try await healthKit.writeEffort(effort, on: workout)
-                    items[itemIndex].status = .written(effort: effort)
                 }
+                let wroteDistance = try await enrichDistanceIfNeeded(
+                    activity: activity, workout: workout, healthKit: healthKit
+                )
+                items[itemIndex].status = Self.matchedStatus(
+                    wroteEffort: !hadEffort, effort: effort, wroteDistance: wroteDistance
+                )
             case .noMatch:
                 // Matching.findMatch returns .noMatch for two distinct reasons:
                 // (1) sport type isn't in the HK activity-type map; we can't
@@ -275,6 +285,47 @@ final class SyncOrchestrator {
             }
         } catch {
             items[itemIndex].status = .error(error.localizedDescription)
+        }
+    }
+
+    // Author the Strava equivalent distance for an indoor ride whose HK twin
+    // carries none (#37). The cheap activity-type/distance pre-checks skip the
+    // HK dedup query for the common non-cycling case; the actual decision still
+    // funnels through DistanceEnrichment.shouldWrite. Returns whether a sample
+    // was written.
+    private func enrichDistanceIfNeeded(
+        activity: StravaActivity,
+        workout: HKWorkout,
+        healthKit: HealthKitManager
+    ) async throws -> Bool {
+        guard workout.workoutActivityType == .cycling, activity.distance > 0 else { return false }
+        let hasNative = healthKit.workoutHasNativeCyclingDistance(workout)
+        let alreadyWritten = try await healthKit.hasOurCyclingDistance(in: workout.startDate...workout.endDate)
+        guard DistanceEnrichment.shouldWrite(
+            activityType: workout.workoutActivityType,
+            stravaDistanceMeters: activity.distance,
+            workoutHasNativeDistance: hasNative,
+            alreadyWrittenByUs: alreadyWritten
+        ) else { return false }
+        try await healthKit.writeCyclingDistance(
+            activity.distance,
+            start: workout.startDate,
+            end: workout.endDate,
+            stravaActivityId: activity.id
+        )
+        return true
+    }
+
+    private static func matchedStatus(
+        wroteEffort: Bool,
+        effort: Double,
+        wroteDistance: Bool
+    ) -> ItemStatus {
+        switch (wroteEffort, wroteDistance) {
+        case (true, true):   return .writtenWithDistance(effort: effort)
+        case (true, false):  return .written(effort: effort)
+        case (false, true):  return .addedDistance
+        case (false, false): return .skippedAlreadyHasEffort
         }
     }
 }
