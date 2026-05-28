@@ -9,6 +9,7 @@
 
 import BackgroundTasks
 import Foundation
+import UIKit
 
 enum BackgroundSync {
     static let taskIdentifier = "dev.holmes.fitnessloadtracker.sync"
@@ -54,6 +55,18 @@ enum BackgroundSync {
         // Re-arm first so a slow sync that hits the expiration handler still
         // leaves a next task pending.
         scheduleNext()
+
+        // HealthKit is encrypted at rest and unreadable while the device is
+        // locked. A BG refresh can fire on a locked device; if it does, every
+        // HK read/write throws "Protected health data is inaccessible" (#35).
+        // Bail cleanly: don't hit Strava for results we can't write, don't log
+        // a noisy failure row, and — critically — don't let the run advance
+        // SyncCheckpoint past activities we never processed. iOS keeps firing;
+        // the work lands on the next fire that happens while unlocked.
+        guard UIApplication.shared.isProtectedDataAvailable else {
+            task.setTaskCompleted(success: true)
+            return
+        }
 
         let healthKit = HealthKitManager()
         let sync = SyncOrchestrator()
