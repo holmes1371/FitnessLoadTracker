@@ -57,18 +57,6 @@ final class SyncOrchestrator {
         await syncActivities(after: after, source: source, healthKit: healthKit)
     }
 
-    // One-shot multi-page backfill from an explicit start date. Same wire
-    // and side-effect surface as syncRecentActivities — just a different
-    // after-date and (implicitly via fetchActivities pagination) a
-    // potentially much larger result set.
-    func syncBackfill(
-        after: Date,
-        source: SyncLogEntry.Source,
-        healthKit: HealthKitManager
-    ) async {
-        await syncActivities(after: after, source: source, healthKit: healthKit)
-    }
-
     private func syncActivities(
         after: Date,
         source: SyncLogEntry.Source,

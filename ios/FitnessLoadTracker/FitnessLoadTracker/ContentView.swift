@@ -15,9 +15,6 @@ struct ContentView: View {
     @State private var bgNextDate: Date?
     @State private var recentSyncs: [SyncLogEntry] = []
     @State private var debugActivityID: String = ""
-    @State private var showBackfillConfirm = false
-    @State private var showCleanupConfirm = false
-    @State private var cleanupResult: String?
 
     var body: some View {
         ScrollView {
@@ -85,13 +82,9 @@ struct ContentView: View {
                 }
                 .disabled(sync.isSyncing)
 
-                backfillButton
-
                 syncResults
 
                 debugSingleActivitySection
-
-                cleanupButton
             }
         case .failed(let message):
             VStack(spacing: 8) {
@@ -102,82 +95,6 @@ struct ContentView: View {
                     Task { await strava.connect() }
                 }
             }
-        }
-    }
-
-    // One-shot multi-page sync from two years back. Idempotent — re-running
-    // re-stamps already-done rides as "already has effort" and skips distance
-    // it has already written — so a partial run (e.g. a Strava rate-limit
-    // stop) is safe to resume by tapping again (#37).
-    private var backfillButton: some View {
-        Button {
-            showBackfillConfirm = true
-        } label: {
-            Text("Backfill 2 years")
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color.indigo)
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-        .disabled(sync.isSyncing)
-        .confirmationDialog(
-            "Backfill the last 2 years from Strava?",
-            isPresented: $showBackfillConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Backfill 2 years") {
-                Task {
-                    let after = Calendar.current.date(byAdding: .year, value: -2, to: Date())
-                        ?? Date(timeIntervalSinceNow: -2 * 365 * 24 * 60 * 60)
-                    await sync.syncBackfill(after: after, source: .foreground, healthKit: manager)
-                    recentSyncs = SyncLog.recent()
-                    await refreshBGStatus()
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Adds effort and indoor-ride cycling distance to matched workouts. Safe to re-run.")
-        }
-    }
-
-    // One-off repair for the pre-dedup duplicate workouts (#37). Destructive but
-    // scoped to app-authored, Strava-stamped workouts only — never device data.
-    private var cleanupButton: some View {
-        VStack(spacing: 6) {
-            Button(role: .destructive) {
-                showCleanupConfirm = true
-            } label: {
-                Text("Remove duplicate workouts").font(.caption)
-            }
-            .disabled(sync.isSyncing)
-            if let cleanupResult {
-                Text(cleanupResult)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .confirmationDialog(
-            "Remove duplicate workouts this app created?",
-            isPresented: $showCleanupConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Remove duplicates", role: .destructive) {
-                Task {
-                    do {
-                        let since = Calendar.current.date(byAdding: .year, value: -3, to: Date())
-                            ?? Date(timeIntervalSinceNow: -3 * 365 * 24 * 60 * 60)
-                        let removed = try await manager.removeDuplicateAuthoredWorkouts(since: since)
-                        cleanupResult = "Removed \(removed) duplicate workout\(removed == 1 ? "" : "s")."
-                    } catch {
-                        cleanupResult = "Cleanup failed: \(error.localizedDescription)"
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Keeps one copy of each ride and deletes app-created duplicates (with their distance/energy/HR). Device-written workouts are never touched.")
         }
     }
 

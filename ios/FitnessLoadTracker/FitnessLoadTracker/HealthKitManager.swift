@@ -40,14 +40,6 @@ final class HealthKitManager {
         // outdoor ride that already carries distance would look empty and get a
         // redundant proxy, double-counting it.
         HKQuantityType(.distanceCycling),
-        // The duplicate-workout cleanup (#37) must read a duplicate's associated
-        // samples to delete them along with the workout — otherwise distance /
-        // energy / HR stay doubled. We can only find samples for types we can
-        // read, so the cleanup-touched sample types are listed here.
-        HKQuantityType(.distanceWalkingRunning),
-        HKQuantityType(.distanceSwimming),
-        HKQuantityType(.activeEnergyBurned),
-        HKQuantityType(.heartRate),
     ]
 
     func requestAuthorization() async {
@@ -161,67 +153,6 @@ final class HealthKitManager {
         guard try await builder.finishWorkout() != nil else {
             throw WriteWorkoutError.builderReturnedNil
         }
-    }
-
-    // Sample types the app attaches to a workout it authors — what the cleanup
-    // deletes alongside a duplicate workout.
-    static let authoredSampleTypes: [HKQuantityType] = [
-        HKQuantityType(.distanceCycling),
-        HKQuantityType(.distanceWalkingRunning),
-        HKQuantityType(.distanceSwimming),
-        HKQuantityType(.activeEnergyBurned),
-        HKQuantityType(.heartRate),
-    ]
-
-    // Remove duplicate workouts this app authored. The create path lacked a
-    // Strava-id dedup, so re-syncs/backfill produced extra copies (#37). Groups
-    // our workouts by (stravaActivityId, isProxy), keeps one of each, and
-    // deletes the rest together with their associated samples (so distance /
-    // energy / HR de-double, not just the workout list). Only touches workouts
-    // authored by this app AND stamped with our Strava id — device-written
-    // workouts (Watch, Peloton, bike computers) and any single copy are left
-    // untouched, so real rides can't be deleted. Returns the count removed.
-    func removeDuplicateAuthoredWorkouts(since: Date) async throws -> Int {
-        let datePredicate = HKQuery.predicateForSamples(withStart: since, end: Date())
-        let sourcePredicate = HKQuery.predicateForObjects(from: .default())
-        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [datePredicate, sourcePredicate])
-        let descriptor = HKSampleQueryDescriptor(
-            predicates: [HKSamplePredicate<HKWorkout>.workout(predicate)],
-            sortDescriptors: [SortDescriptor(\.startDate)]
-        )
-        let workouts = try await descriptor.result(for: healthStore)
-
-        var seen = Set<String>()
-        var duplicates: [HKWorkout] = []
-        for workout in workouts {
-            guard let id = stravaActivityId(of: workout) else { continue }
-            let key = "\(id)|\(isDistanceProxy(workout))"
-            if !seen.insert(key).inserted {
-                duplicates.append(workout)
-            }
-        }
-        guard !duplicates.isEmpty else { return 0 }
-
-        var toDelete: [HKObject] = duplicates
-        for workout in duplicates {
-            for type in Self.authoredSampleTypes {
-                toDelete.append(contentsOf: try await associatedSamples(of: type, for: workout))
-            }
-        }
-        try await healthStore.delete(toDelete)
-        return duplicates.count
-    }
-
-    private func associatedSamples(of type: HKQuantityType, for workout: HKWorkout) async throws -> [HKQuantitySample] {
-        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
-            HKQuery.predicateForObjects(from: workout),
-            HKQuery.predicateForObjects(from: .default()),
-        ])
-        let descriptor = HKSampleQueryDescriptor(
-            predicates: [HKSamplePredicate<HKQuantitySample>.quantitySample(type: type, predicate: predicate)],
-            sortDescriptors: []
-        )
-        return try await descriptor.result(for: healthStore)
     }
 
     enum WriteWorkoutError: LocalizedError {
