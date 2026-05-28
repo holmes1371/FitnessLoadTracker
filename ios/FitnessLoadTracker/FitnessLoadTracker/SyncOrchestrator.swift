@@ -231,7 +231,12 @@ final class SyncOrchestrator {
             let window: TimeInterval = 5 * 60
             let start = activity.startDate.addingTimeInterval(-window)
             let end = activity.startDate.addingTimeInterval(TimeInterval(activity.elapsedTime) + window)
+            // Exclude our own distance-proxy workouts (#37) — they're cycling
+            // workouts near the ride's start, and leaving them in the candidate
+            // pool would risk a multipleMatches skip or attaching effort to the
+            // proxy instead of the real Peloton workout.
             let workouts = try await healthKit.workouts(in: start...end)
+                .filter { !healthKit.isDistanceProxy($0) }
             let candidates = workouts.map {
                 WorkoutCandidate(
                     startDate: $0.startDate,
@@ -300,17 +305,18 @@ final class SyncOrchestrator {
     ) async throws -> Bool {
         guard workout.workoutActivityType == .cycling, activity.distance > 0 else { return false }
         let hasNative = healthKit.workoutHasNativeCyclingDistance(workout)
-        let alreadyWritten = try await healthKit.hasOurCyclingDistance(in: workout.startDate...workout.endDate)
+        let alreadyWritten = try await healthKit.hasDistanceProxyWorkout(
+            stravaActivityId: activity.id, in: workout.startDate...workout.endDate
+        )
         guard DistanceEnrichment.shouldWrite(
             activityType: workout.workoutActivityType,
             stravaDistanceMeters: activity.distance,
             workoutHasNativeDistance: hasNative,
             alreadyWrittenByUs: alreadyWritten
         ) else { return false }
-        try await healthKit.writeCyclingDistance(
-            activity.distance,
+        try await healthKit.writeDistanceProxyWorkout(
+            meters: activity.distance,
             start: workout.startDate,
-            end: workout.endDate,
             stravaActivityId: activity.id
         )
         return true

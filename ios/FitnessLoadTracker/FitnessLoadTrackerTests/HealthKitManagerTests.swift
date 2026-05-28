@@ -25,7 +25,7 @@ struct HealthKitManagerTests {
     func readSetContents() {
         #expect(HealthKitManager.readTypes.contains(HKWorkoutType.workoutType()))
         #expect(HealthKitManager.readTypes.contains(HKQuantityType(.workoutEffortScore)))
-        // Distance enrichment dedup + native-distance check read this (#37).
+        // Distance enrichment's native-distance check reads this (#37).
         #expect(HealthKitManager.readTypes.contains(HKQuantityType(.distanceCycling)))
     }
 
