@@ -20,7 +20,7 @@ enum FailureNotifier {
     static let notifiedFlagKey = "dev.holmes.fitnessloadtracker.failureStreakNotified"
     static let notificationIdentifier = "sync-failure-streak"
 
-    enum Decision: Equatable {
+    nonisolated enum Decision: Equatable {
         case fire(latestError: String?)
         case resetStreak
         case noop

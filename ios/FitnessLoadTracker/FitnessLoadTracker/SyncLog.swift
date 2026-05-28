@@ -9,7 +9,7 @@
 
 import Foundation
 
-struct SyncLogEntry: Codable, Identifiable, Equatable {
+nonisolated struct SyncLogEntry: Codable, Identifiable, Equatable {
     let id: UUID
     let timestamp: Date
     let source: Source

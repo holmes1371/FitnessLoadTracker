@@ -16,7 +16,7 @@ struct WorkoutCandidate: Equatable {
     let activityType: HKWorkoutActivityType
 }
 
-enum MatchResult: Equatable {
+nonisolated enum MatchResult: Equatable {
     case matched(index: Int)
     case noMatch
     case multipleMatches
