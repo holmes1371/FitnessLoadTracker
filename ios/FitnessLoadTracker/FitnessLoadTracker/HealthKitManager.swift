@@ -35,6 +35,11 @@ final class HealthKitManager {
     static let readTypes: Set<HKObjectType> = [
         HKQuantityType(.workoutEffortScore),
         HKWorkoutType.workoutType(),
+        // Needed by the indoor-ride distance enrichment's native-distance check
+        // (#37): without read access HealthKit returns nil statistics, so an
+        // outdoor ride that already carries distance would look empty and get a
+        // redundant proxy, double-counting it.
+        HKQuantityType(.distanceCycling),
     ]
 
     func requestAuthorization() async {
@@ -72,6 +77,81 @@ final class HealthKitManager {
             // workout. If linking fails, clean up the orphan before propagating.
             try? await healthStore.delete([sample])
             throw error
+        }
+    }
+
+    // Whether the matched workout already carries its own cycling distance
+    // (an outdoor ride from a GPS source). Peloton/indoor rides have none, so
+    // nil/zero statistics is the signal to enrich (#37).
+    func workoutHasNativeCyclingDistance(_ workout: HKWorkout) -> Bool {
+        guard let sum = workout.statistics(for: HKQuantityType(.distanceCycling))?.sumQuantity() else {
+            return false
+        }
+        return sum.doubleValue(for: .meter()) > 0
+    }
+
+    // Metadata flag marking a workout we synthesized purely to carry an indoor
+    // ride's distance (#37) — distinct from a full app-authored workout. Drives
+    // dedup and the exclusion of these proxies from match candidates.
+    static let distanceProxyMetadataKey = "\(customMetadataPrefix)distanceProxy"
+
+    // 1s keeps the proxy's contribution to cycling TIME and Apple's Exercise
+    // minutes negligible. It also sits far from the ride's real duration, but we
+    // don't lean on that — Matching excludes proxies explicitly (see
+    // SyncOrchestrator.process) so a short ride can't collide.
+    static let distanceProxyDuration: TimeInterval = 1
+
+    func isDistanceProxy(_ workout: HKWorkout) -> Bool {
+        (workout.metadata?[Self.distanceProxyMetadataKey] as? Bool) == true
+    }
+
+    func stravaActivityId(of workout: HKWorkout) -> Int64? {
+        workout.metadata?["\(Self.customMetadataPrefix)stravaActivityId"] as? Int64
+    }
+
+    // True if a prior sync already created the distance proxy for this ride —
+    // the idempotency guard. Scoped to our own source and matched on the Strava
+    // activity id so nothing else counts.
+    func hasDistanceProxyWorkout(stravaActivityId: Int64, in range: ClosedRange<Date>) async throws -> Bool {
+        let datePredicate = HKQuery.predicateForSamples(withStart: range.lowerBound, end: range.upperBound)
+        let sourcePredicate = HKQuery.predicateForObjects(from: .default())
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [datePredicate, sourcePredicate])
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [HKSamplePredicate<HKWorkout>.workout(predicate)],
+            sortDescriptors: []
+        )
+        let workouts = try await descriptor.result(for: healthStore)
+        return workouts.contains {
+            isDistanceProxy($0)
+                && ($0.metadata?["\(Self.customMetadataPrefix)stravaActivityId"] as? Int64) == stravaActivityId
+        }
+    }
+
+    // Author a near-zero-duration cycling workout carrying the indoor ride's
+    // distance. We can't add distance onto the source-app workout (HK only lets
+    // an app modify samples it authored, #12), so this sibling workout is how
+    // the distance reaches the per-workout cycling rollup. Stamped with the
+    // Strava id + proxy flag.
+    func writeDistanceProxyWorkout(meters: Double, start: Date, stravaActivityId: Int64) async throws {
+        let end = start.addingTimeInterval(Self.distanceProxyDuration)
+        let config = HKWorkoutConfiguration()
+        config.activityType = .cycling
+        let builder = HKWorkoutBuilder(healthStore: healthStore, configuration: config, device: nil)
+        try await builder.beginCollection(at: start)
+        try await builder.addMetadata([
+            "\(Self.customMetadataPrefix)stravaActivityId": stravaActivityId,
+            Self.distanceProxyMetadataKey: true,
+        ])
+        let sample = HKQuantitySample(
+            type: HKQuantityType(.distanceCycling),
+            quantity: HKQuantity(unit: .meter(), doubleValue: meters),
+            start: start,
+            end: end
+        )
+        try await builder.addSamples([sample])
+        try await builder.endCollection(at: end)
+        guard try await builder.finishWorkout() != nil else {
+            throw WriteWorkoutError.builderReturnedNil
         }
     }
 

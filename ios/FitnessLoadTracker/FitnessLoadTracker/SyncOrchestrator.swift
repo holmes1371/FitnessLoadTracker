@@ -12,6 +12,8 @@ final class SyncOrchestrator {
     enum ItemStatus: Equatable {
         case pending
         case written(effort: Double)
+        case writtenWithDistance(effort: Double)
+        case addedDistance
         case writtenAsNew(effort: Double)
         case skippedNoSufferScore
         case skippedNoMatch
@@ -52,18 +54,6 @@ final class SyncOrchestrator {
     ) async {
         priorCheckpoint = SyncCheckpoint.load()
         let after = SyncWindow.resolveAfterDate(lastSuccessfulSyncAt: priorCheckpoint)
-        await syncActivities(after: after, source: source, healthKit: healthKit)
-    }
-
-    // One-shot multi-page backfill from an explicit start date. Same wire
-    // and side-effect surface as syncRecentActivities — just a different
-    // after-date and (implicitly via fetchActivities pagination) a
-    // potentially much larger result set.
-    func syncBackfill(
-        after: Date,
-        source: SyncLogEntry.Source,
-        healthKit: HealthKitManager
-    ) async {
         await syncActivities(after: after, source: source, healthKit: healthKit)
     }
 
@@ -229,7 +219,12 @@ final class SyncOrchestrator {
             let window: TimeInterval = 5 * 60
             let start = activity.startDate.addingTimeInterval(-window)
             let end = activity.startDate.addingTimeInterval(TimeInterval(activity.elapsedTime) + window)
+            // Exclude our own distance-proxy workouts (#37) — they're cycling
+            // workouts near the ride's start, and leaving them in the candidate
+            // pool would risk a multipleMatches skip or attaching effort to the
+            // proxy instead of the real Peloton workout.
             let workouts = try await healthKit.workouts(in: start...end)
+                .filter { !healthKit.isDistanceProxy($0) }
             let candidates = workouts.map {
                 WorkoutCandidate(
                     startDate: $0.startDate,
@@ -239,13 +234,10 @@ final class SyncOrchestrator {
             }
             switch Matching.findMatch(for: activity, in: candidates) {
             case .matched(let i):
-                let workout = workouts[i]
-                if try await healthKit.hasEffortScore(for: workout) {
-                    items[itemIndex].status = .skippedAlreadyHasEffort
-                } else {
-                    try await healthKit.writeEffort(effort, on: workout)
-                    items[itemIndex].status = .written(effort: effort)
-                }
+                try await handleMatchedWorkout(
+                    itemIndex: itemIndex, workout: workouts[i],
+                    effort: effort, activity: activity, healthKit: healthKit
+                )
             case .noMatch:
                 // Matching.findMatch returns .noMatch for two distinct reasons:
                 // (1) sport type isn't in the HK activity-type map; we can't
@@ -254,6 +246,19 @@ final class SyncOrchestrator {
                 // tolerance — this is the create-and-attach path.
                 guard Matching.hkActivityType(forStravaSportType: activity.sportType) != nil else {
                     items[itemIndex].status = .skippedNoMatch
+                    return
+                }
+                // A workout we authored on a prior sync is usually present here
+                // but rejected by Matching — we store moving_time as the
+                // workout's duration while Matching compares elapsed_time, so
+                // outdoor rides with stops fall outside the 60s tolerance.
+                // Dedup by Strava id so re-syncs/backfill ensure effort on the
+                // existing workout instead of creating a duplicate (#37).
+                if let existing = workouts.first(where: { healthKit.stravaActivityId(of: $0) == activity.id }) {
+                    try await handleMatchedWorkout(
+                        itemIndex: itemIndex, workout: existing,
+                        effort: effort, activity: activity, healthKit: healthKit
+                    )
                     return
                 }
                 let detail: StravaActivityDetail
@@ -275,6 +280,71 @@ final class SyncOrchestrator {
             }
         } catch {
             items[itemIndex].status = .error(error.localizedDescription)
+        }
+    }
+
+    // Shared by the matched path and the create-path dedup. Effort and distance
+    // are independent and each idempotent: a ride synced before #37 already has
+    // effort but may still be missing distance, so the effort-dedup must not
+    // short-circuit the distance write (the backfill case).
+    private func handleMatchedWorkout(
+        itemIndex: Int,
+        workout: HKWorkout,
+        effort: Double,
+        activity: StravaActivity,
+        healthKit: HealthKitManager
+    ) async throws {
+        let hadEffort = try await healthKit.hasEffortScore(for: workout)
+        if !hadEffort {
+            try await healthKit.writeEffort(effort, on: workout)
+        }
+        let wroteDistance = try await enrichDistanceIfNeeded(
+            activity: activity, workout: workout, healthKit: healthKit
+        )
+        items[itemIndex].status = Self.matchedStatus(
+            wroteEffort: !hadEffort, effort: effort, wroteDistance: wroteDistance
+        )
+    }
+
+    // Author the Strava equivalent distance for an indoor ride whose HK twin
+    // carries none (#37). The cheap activity-type/distance pre-checks skip the
+    // HK dedup query for the common non-cycling case; the actual decision still
+    // funnels through DistanceEnrichment.shouldWrite. Returns whether a sample
+    // was written.
+    private func enrichDistanceIfNeeded(
+        activity: StravaActivity,
+        workout: HKWorkout,
+        healthKit: HealthKitManager
+    ) async throws -> Bool {
+        guard workout.workoutActivityType == .cycling, activity.distance > 0 else { return false }
+        let hasNative = healthKit.workoutHasNativeCyclingDistance(workout)
+        let alreadyWritten = try await healthKit.hasDistanceProxyWorkout(
+            stravaActivityId: activity.id, in: workout.startDate...workout.endDate
+        )
+        guard DistanceEnrichment.shouldWrite(
+            activityType: workout.workoutActivityType,
+            stravaDistanceMeters: activity.distance,
+            workoutHasNativeDistance: hasNative,
+            alreadyWrittenByUs: alreadyWritten
+        ) else { return false }
+        try await healthKit.writeDistanceProxyWorkout(
+            meters: activity.distance,
+            start: workout.startDate,
+            stravaActivityId: activity.id
+        )
+        return true
+    }
+
+    private static func matchedStatus(
+        wroteEffort: Bool,
+        effort: Double,
+        wroteDistance: Bool
+    ) -> ItemStatus {
+        switch (wroteEffort, wroteDistance) {
+        case (true, true):   return .writtenWithDistance(effort: effort)
+        case (true, false):  return .written(effort: effort)
+        case (false, true):  return .addedDistance
+        case (false, false): return .skippedAlreadyHasEffort
         }
     }
 }

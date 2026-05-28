@@ -187,6 +187,10 @@ struct ContentView: View {
             Text("…").foregroundStyle(.secondary)
         case .written(let effort):
             Text("Effort \(effort, specifier: "%.0f")").foregroundStyle(.green)
+        case .writtenWithDistance(let effort):
+            Text("Effort \(effort, specifier: "%.0f") + dist").foregroundStyle(.green)
+        case .addedDistance:
+            Text("+ Distance").foregroundStyle(.green)
         case .writtenAsNew(let effort):
             Text("Created + Effort \(effort, specifier: "%.0f")").foregroundStyle(.green)
         case .skippedNoSufferScore:

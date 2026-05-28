@@ -1,7 +1,0 @@
-# 2026-05-24 — #12 closed (Peloton/Strava tiebreaker); session-discipline pivot to working-branch verification
-
-- **#12 closed** — Peloton-over-Strava tiebreaker added to `Matching.findMatch` (exact 2-match pair only; everything else still `.multipleMatches`). Full post-mortem in `completed/12.md`. Bundle IDs hardcoded: Peloton `com.Peloton.PelotonApp`, Strava `com.strava.stravaride`.
-- **POC outcome (cold-pickup signal for future agents): `HKHealthStore.delete` is restricted to samples your own app authored** — confirmed by HKError `com.apple.healthkit 3`. Mutating another app's HKWorkout stats is equally impossible (immutable + same authorship rule). Don't relitigate.
-- **Session discipline pivoted in CLAUDE.md** (same PR): verification happens on the agent's working branch via Xcode pointed at the worktree's `xcodeproj` BEFORE the PR opens; post-mortem + session-log ride the feature PR; `Closes #N` allowed in PR bodies; "In Testing" column now legacy/unused.
-- **Two CLAUDE.md cleanup items flagged but not actioned** — line 44 (Windows `gh` path reference) and line 51 (pytest-from-worktree note, leftover from Python era). Worth a cleanup pass when Tom picks them up.
-- **Next code work unchanged from prior session**: #5 (BG App Refresh) still pending; Apple Developer paid-team activation may have completed (verify via Xcode signing screen before the pbxproj `DEVELOPMENT_TEAM` diff lands).

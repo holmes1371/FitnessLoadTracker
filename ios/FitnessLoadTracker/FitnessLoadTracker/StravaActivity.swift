@@ -12,6 +12,7 @@ struct StravaActivity: Decodable, Equatable, Identifiable {
     let startDate: Date
     let elapsedTime: Int
     let movingTime: Int
+    let distance: Double
     let sufferScore: Double?
 
     enum CodingKeys: String, CodingKey {
@@ -21,6 +22,7 @@ struct StravaActivity: Decodable, Equatable, Identifiable {
         case startDate = "start_date"
         case elapsedTime = "elapsed_time"
         case movingTime = "moving_time"
+        case distance
         case sufferScore = "suffer_score"
     }
 }
