@@ -16,6 +16,8 @@ struct ContentView: View {
     @State private var recentSyncs: [SyncLogEntry] = []
     @State private var debugActivityID: String = ""
     @State private var showBackfillConfirm = false
+    @State private var showCleanupConfirm = false
+    @State private var cleanupResult: String?
 
     var body: some View {
         ScrollView {
@@ -88,6 +90,8 @@ struct ContentView: View {
                 syncResults
 
                 debugSingleActivitySection
+
+                cleanupButton
             }
         case .failed(let message):
             VStack(spacing: 8) {
@@ -134,6 +138,46 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Adds effort and indoor-ride cycling distance to matched workouts. Safe to re-run.")
+        }
+    }
+
+    // One-off repair for the pre-dedup duplicate workouts (#37). Destructive but
+    // scoped to app-authored, Strava-stamped workouts only — never device data.
+    private var cleanupButton: some View {
+        VStack(spacing: 6) {
+            Button(role: .destructive) {
+                showCleanupConfirm = true
+            } label: {
+                Text("Remove duplicate workouts").font(.caption)
+            }
+            .disabled(sync.isSyncing)
+            if let cleanupResult {
+                Text(cleanupResult)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .confirmationDialog(
+            "Remove duplicate workouts this app created?",
+            isPresented: $showCleanupConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Remove duplicates", role: .destructive) {
+                Task {
+                    do {
+                        let since = Calendar.current.date(byAdding: .year, value: -3, to: Date())
+                            ?? Date(timeIntervalSinceNow: -3 * 365 * 24 * 60 * 60)
+                        let removed = try await manager.removeDuplicateAuthoredWorkouts(since: since)
+                        cleanupResult = "Removed \(removed) duplicate workout\(removed == 1 ? "" : "s")."
+                    } catch {
+                        cleanupResult = "Cleanup failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Keeps one copy of each ride and deletes app-created duplicates (with their distance/energy/HR). Device-written workouts are never touched.")
         }
     }
 

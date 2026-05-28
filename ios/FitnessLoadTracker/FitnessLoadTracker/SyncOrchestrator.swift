@@ -246,20 +246,9 @@ final class SyncOrchestrator {
             }
             switch Matching.findMatch(for: activity, in: candidates) {
             case .matched(let i):
-                let workout = workouts[i]
-                // Effort and distance are independent and each idempotent: a
-                // ride synced before #37 already has effort but is still
-                // missing distance, so the effort-dedup must not short-circuit
-                // the distance write (this is the backfill case).
-                let hadEffort = try await healthKit.hasEffortScore(for: workout)
-                if !hadEffort {
-                    try await healthKit.writeEffort(effort, on: workout)
-                }
-                let wroteDistance = try await enrichDistanceIfNeeded(
-                    activity: activity, workout: workout, healthKit: healthKit
-                )
-                items[itemIndex].status = Self.matchedStatus(
-                    wroteEffort: !hadEffort, effort: effort, wroteDistance: wroteDistance
+                try await handleMatchedWorkout(
+                    itemIndex: itemIndex, workout: workouts[i],
+                    effort: effort, activity: activity, healthKit: healthKit
                 )
             case .noMatch:
                 // Matching.findMatch returns .noMatch for two distinct reasons:
@@ -269,6 +258,19 @@ final class SyncOrchestrator {
                 // tolerance — this is the create-and-attach path.
                 guard Matching.hkActivityType(forStravaSportType: activity.sportType) != nil else {
                     items[itemIndex].status = .skippedNoMatch
+                    return
+                }
+                // A workout we authored on a prior sync is usually present here
+                // but rejected by Matching — we store moving_time as the
+                // workout's duration while Matching compares elapsed_time, so
+                // outdoor rides with stops fall outside the 60s tolerance.
+                // Dedup by Strava id so re-syncs/backfill ensure effort on the
+                // existing workout instead of creating a duplicate (#37).
+                if let existing = workouts.first(where: { healthKit.stravaActivityId(of: $0) == activity.id }) {
+                    try await handleMatchedWorkout(
+                        itemIndex: itemIndex, workout: existing,
+                        effort: effort, activity: activity, healthKit: healthKit
+                    )
                     return
                 }
                 let detail: StravaActivityDetail
@@ -291,6 +293,29 @@ final class SyncOrchestrator {
         } catch {
             items[itemIndex].status = .error(error.localizedDescription)
         }
+    }
+
+    // Shared by the matched path and the create-path dedup. Effort and distance
+    // are independent and each idempotent: a ride synced before #37 already has
+    // effort but may still be missing distance, so the effort-dedup must not
+    // short-circuit the distance write (the backfill case).
+    private func handleMatchedWorkout(
+        itemIndex: Int,
+        workout: HKWorkout,
+        effort: Double,
+        activity: StravaActivity,
+        healthKit: HealthKitManager
+    ) async throws {
+        let hadEffort = try await healthKit.hasEffortScore(for: workout)
+        if !hadEffort {
+            try await healthKit.writeEffort(effort, on: workout)
+        }
+        let wroteDistance = try await enrichDistanceIfNeeded(
+            activity: activity, workout: workout, healthKit: healthKit
+        )
+        items[itemIndex].status = Self.matchedStatus(
+            wroteEffort: !hadEffort, effort: effort, wroteDistance: wroteDistance
+        )
     }
 
     // Author the Strava equivalent distance for an indoor ride whose HK twin
