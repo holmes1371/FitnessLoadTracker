@@ -4,6 +4,7 @@
 //
 
 import BackgroundTasks
+import HealthKit
 import SwiftUI
 import UIKit
 
@@ -84,6 +85,8 @@ struct ContentView: View {
 
                 syncResults
 
+                duplicatesSection
+
                 debugSingleActivitySection
             }
         case .failed(let message):
@@ -159,6 +162,58 @@ struct ContentView: View {
             }
         } else if sync.errorMessage == nil, sync.lastSyncFinishedAt != nil {
             emptySyncMessage
+        }
+    }
+
+    // Possible duplicate HealthKit workouts found this sync (#39). Read-only —
+    // we can't delete other apps' samples, so this just points Tom at what to
+    // remove manually in the Health app.
+    @ViewBuilder
+    private var duplicatesSection: some View {
+        if !sync.duplicateClusters.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Possible duplicates")
+                    .font(.headline)
+                    .foregroundStyle(.orange)
+                Text("Same type, start, and duration as another workout. Review in the Health app and delete any extras.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(sync.duplicateClusters) { cluster in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(typeName(cluster.members[0].activityType)) · \(cluster.members[0].startDate.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.subheadline.bold())
+                        ForEach(cluster.members) { member in
+                            Text("• \(member.sourceName) · \(durationLabel(member.duration))\(distanceSuffix(member.distanceMeters))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Divider()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func durationLabel(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private func distanceSuffix(_ meters: Double?) -> String {
+        guard let meters, meters > 0 else { return "" }
+        return String(format: " · %.2f mi", meters / 1609.344)
+    }
+
+    private func typeName(_ type: HKWorkoutActivityType) -> String {
+        switch type {
+        case .cycling: return "Cycling"
+        case .running: return "Running"
+        case .walking: return "Walking"
+        case .hiking: return "Hiking"
+        case .swimming: return "Swimming"
+        case .traditionalStrengthTraining: return "Strength"
+        default: return "Workout"
         }
     }
 

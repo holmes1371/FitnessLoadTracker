@@ -40,6 +40,11 @@ final class HealthKitManager {
         // outdoor ride that already carries distance would look empty and get a
         // redundant proxy, double-counting it.
         HKQuantityType(.distanceCycling),
+        // Read-only, for the duplicate-workout display (#39): without read access
+        // a flagged run/swim's distance reads as nil and shows "—". Cycling is
+        // already covered above.
+        HKQuantityType(.distanceWalkingRunning),
+        HKQuantityType(.distanceSwimming),
     ]
 
     func requestAuthorization() async {
@@ -107,6 +112,21 @@ final class HealthKitManager {
 
     func stravaActivityId(of workout: HKWorkout) -> Int64? {
         workout.metadata?["\(Self.customMetadataPrefix)stravaActivityId"] as? Int64
+    }
+
+    // The app that authored the workout — what the user sees in the Health app's
+    // source list, so it identifies which copy to delete (#39).
+    func sourceName(of workout: HKWorkout) -> String {
+        workout.sourceRevision.source.name
+    }
+
+    // The workout's own distance in meters for the type-appropriate distance
+    // sample, nil when it carries none or read access is missing. Display-only
+    // corroboration on the duplicate list (#39).
+    func distanceMeters(of workout: HKWorkout) -> Double? {
+        let type = Self.distanceQuantityType(for: workout.workoutActivityType)
+        guard let sum = workout.statistics(for: type)?.sumQuantity() else { return nil }
+        return sum.doubleValue(for: .meter())
     }
 
     // True if a prior sync already created the distance proxy for this ride —

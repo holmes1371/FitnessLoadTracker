@@ -29,6 +29,9 @@ final class SyncOrchestrator {
     }
 
     var items: [Item] = []
+    // Possible duplicate HealthKit workouts found while syncing — surfaced for
+    // manual review/deletion (#39). Ephemeral, like `items`; rebuilt each sync.
+    var duplicateClusters: [DuplicateCluster] = []
     var isSyncing = false
     var errorMessage: String?
     // Set in the defer of syncActivities/syncSingleActivity; nil until any
@@ -65,6 +68,7 @@ final class SyncOrchestrator {
         isSyncing = true
         errorMessage = nil
         items = []
+        duplicateClusters = []
         lastSyncFinishedAt = nil
         defer {
             let perItemErrors = items.filter {
@@ -142,6 +146,7 @@ final class SyncOrchestrator {
         isSyncing = true
         errorMessage = nil
         items = []
+        duplicateClusters = []
         lastSyncFinishedAt = nil
         defer {
             let perItemErrors = items.filter {
@@ -225,6 +230,7 @@ final class SyncOrchestrator {
             // proxy instead of the real Peloton workout.
             let workouts = try await healthKit.workouts(in: start...end)
                 .filter { !healthKit.isDistanceProxy($0) }
+            collectDuplicates(in: workouts, healthKit: healthKit)
             let candidates = workouts.map {
                 WorkoutCandidate(
                     startDate: $0.startDate,
@@ -280,6 +286,27 @@ final class SyncOrchestrator {
             }
         } catch {
             items[itemIndex].status = .error(error.localizedDescription)
+        }
+    }
+
+    // Cluster the workouts in this activity's window into possible duplicates
+    // (#39) and merge them into `duplicateClusters`. Per-activity windows overlap,
+    // so the same pair can surface from several items — dedup by cluster id (the
+    // sorted member UUIDs).
+    private func collectDuplicates(in workouts: [HKWorkout], healthKit: HealthKitManager) {
+        let checkable = workouts.map {
+            WorkoutForDuplicateCheck(
+                id: $0.uuid,
+                startDate: $0.startDate,
+                duration: $0.duration,
+                activityType: $0.workoutActivityType,
+                sourceName: healthKit.sourceName(of: $0),
+                distanceMeters: healthKit.distanceMeters(of: $0)
+            )
+        }
+        var seen = Set(duplicateClusters.map(\.id))
+        for cluster in DuplicateDetection.clusters(in: checkable) where seen.insert(cluster.id).inserted {
+            duplicateClusters.append(cluster)
         }
     }
 
