@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var bgPendingCount = 0
     @State private var bgNextDate: Date?
     @State private var recentSyncs: [SyncLogEntry] = []
+    @State private var expandedSyncIDs: Set<UUID> = []
     @State private var debugActivityID: String = ""
 
     var body: some View {
@@ -288,30 +289,80 @@ struct ContentView: View {
                 Text("Recent syncs")
                     .font(.headline)
                 ForEach(recentSyncs) { entry in
+                    let expandable = !entry.items.isEmpty
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 8) {
                             sourcePill(for: entry.source)
                             Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
                                 .font(.caption)
                             Spacer()
-                            Text("\(entry.activitiesProcessed) activities")
+                            Text(syncedCountLabel(for: entry))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             if entry.perItemErrors > 0 || entry.errorSummary != nil {
                                 Text("⚠")
                                     .foregroundStyle(.orange)
                             }
+                            if expandable {
+                                Image(systemName: expandedSyncIDs.contains(entry.id) ? "chevron.down" : "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard expandable else { return }
+                            withAnimation { toggleExpanded(entry.id) }
                         }
                         if let detail = entry.errorSummary ?? entry.firstItemError {
                             Text(detail)
                                 .font(.caption2)
                                 .foregroundStyle(.red)
                         }
+                        if expandedSyncIDs.contains(entry.id) {
+                            ForEach(entry.items) { item in
+                                HStack(alignment: .top, spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text(item.name)
+                                            .font(.caption)
+                                        Text(item.startDate.formatted(date: .abbreviated, time: .shortened))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text(item.outcome)
+                                        .font(.caption2)
+                                        .foregroundStyle(item.wasWritten ? .green : .secondary)
+                                        .multilineTextAlignment(.trailing)
+                                }
+                                .padding(.leading, 8)
+                            }
+                        }
                     }
                     Divider()
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // Headline number on a Recent syncs row. New entries (#41) carry per-item
+    // data, so we show activities actually *written* — a skip-only overlap
+    // re-fetch reads "0 synced" instead of the old misleading "1 activity".
+    // Legacy entries have no items array; fall back to the prior count.
+    private func syncedCountLabel(for entry: SyncLogEntry) -> String {
+        guard !entry.items.isEmpty else {
+            return "\(entry.activitiesProcessed) activities"
+        }
+        let synced = entry.items.filter(\.wasWritten).count
+        return "\(synced) synced"
+    }
+
+    private func toggleExpanded(_ id: UUID) {
+        if expandedSyncIDs.contains(id) {
+            expandedSyncIDs.remove(id)
+        } else {
+            expandedSyncIDs.insert(id)
         }
     }
 
