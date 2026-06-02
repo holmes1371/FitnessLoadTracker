@@ -22,7 +22,8 @@ struct SyncLogTests {
         activitiesProcessed: Int = 5,
         errorSummary: String? = nil,
         perItemErrors: Int = 0,
-        firstItemError: String? = nil
+        firstItemError: String? = nil,
+        items: [ItemSummary] = []
     ) -> SyncLogEntry {
         SyncLogEntry(
             id: UUID(),
@@ -31,7 +32,8 @@ struct SyncLogTests {
             activitiesProcessed: activitiesProcessed,
             errorSummary: errorSummary,
             perItemErrors: perItemErrors,
-            firstItemError: firstItemError
+            firstItemError: firstItemError,
+            items: items
         )
     }
 
@@ -101,10 +103,24 @@ struct SyncLogTests {
         #expect(result[0].firstItemError == "HK unavailable")
     }
 
+    @Test("per-item summaries survive round-trip")
+    func itemSummariesCodable() {
+        let defaults = freshDefaults()
+        let summaries = [
+            ItemSummary(id: 1, name: "Morning Ride", startDate: Date(timeIntervalSince1970: 770_000_000), outcome: "Effort 42", wasWritten: true),
+            ItemSummary(id: 2, name: "Lunch Walk", startDate: Date(timeIntervalSince1970: 770_010_000), outcome: "No score", wasWritten: false),
+        ]
+        let e = entry(items: summaries)
+        SyncLog.append(e, to: defaults)
+        let result = SyncLog.recent(from: defaults)
+        #expect(result[0].items == summaries)
+    }
+
     // Legacy entries persisted before #32 don't have firstItemError in the
-    // JSON. Optional decoding must default to nil, not throw — or the whole
-    // SyncLog.recent() decode fails and Tom's history disappears.
-    @Test("legacy JSON without firstItemError decodes with nil")
+    // JSON, and pre-#41 entries lack `items`. Both must default (nil / [])
+    // rather than throw — else the whole SyncLog.recent() decode fails and
+    // Tom's history disappears.
+    @Test("legacy JSON without firstItemError or items decodes with defaults")
     func legacyJSONDecodes() throws {
         let defaults = freshDefaults()
         let legacy = #"[{"id":"00000000-0000-0000-0000-000000000001","timestamp":770000000.0,"source":"background","activitiesProcessed":3,"errorSummary":null,"perItemErrors":0}]"#
@@ -113,5 +129,37 @@ struct SyncLogTests {
         #expect(result.count == 1)
         #expect(result[0].activitiesProcessed == 3)
         #expect(result[0].firstItemError == nil)
+        #expect(result[0].items.isEmpty)
+    }
+}
+
+@Suite("SyncOrchestrator.ItemStatus")
+struct ItemStatusTests {
+    @Test("isWrite is true only for outcomes that wrote to HealthKit")
+    func isWriteCases() {
+        #expect(SyncOrchestrator.ItemStatus.written(effort: 30).isWrite)
+        #expect(SyncOrchestrator.ItemStatus.writtenWithDistance(effort: 30).isWrite)
+        #expect(SyncOrchestrator.ItemStatus.addedDistance.isWrite)
+        #expect(SyncOrchestrator.ItemStatus.writtenAsNew(effort: 30).isWrite)
+
+        #expect(!SyncOrchestrator.ItemStatus.pending.isWrite)
+        #expect(!SyncOrchestrator.ItemStatus.skippedNoSufferScore.isWrite)
+        #expect(!SyncOrchestrator.ItemStatus.skippedNoMatch.isWrite)
+        #expect(!SyncOrchestrator.ItemStatus.skippedMultipleMatches.isWrite)
+        #expect(!SyncOrchestrator.ItemStatus.skippedAlreadyHasEffort.isWrite)
+        #expect(!SyncOrchestrator.ItemStatus.error("boom").isWrite)
+    }
+
+    @Test("summaryLabel renders the plain-text outcome")
+    func summaryLabels() {
+        #expect(SyncOrchestrator.ItemStatus.written(effort: 42).summaryLabel == "Effort 42")
+        #expect(SyncOrchestrator.ItemStatus.writtenWithDistance(effort: 42).summaryLabel == "Effort 42 + dist")
+        #expect(SyncOrchestrator.ItemStatus.addedDistance.summaryLabel == "+ Distance")
+        #expect(SyncOrchestrator.ItemStatus.writtenAsNew(effort: 42).summaryLabel == "Created + Effort 42")
+        #expect(SyncOrchestrator.ItemStatus.skippedNoSufferScore.summaryLabel == "No score")
+        #expect(SyncOrchestrator.ItemStatus.skippedNoMatch.summaryLabel == "No match")
+        #expect(SyncOrchestrator.ItemStatus.skippedMultipleMatches.summaryLabel == "Multiple matches")
+        #expect(SyncOrchestrator.ItemStatus.skippedAlreadyHasEffort.summaryLabel == "Already has effort")
+        #expect(SyncOrchestrator.ItemStatus.error("network down").summaryLabel == "network down")
     }
 }

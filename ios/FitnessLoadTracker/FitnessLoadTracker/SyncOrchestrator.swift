@@ -20,6 +20,36 @@ final class SyncOrchestrator {
         case skippedMultipleMatches
         case skippedAlreadyHasEffort
         case error(String)
+
+        // True only for the outcomes that actually wrote something to
+        // HealthKit. Drives the "synced" headline count in Recent syncs (#41):
+        // skips and errors don't count as synced.
+        var isWrite: Bool {
+            switch self {
+            case .written, .writtenWithDistance, .addedDistance, .writtenAsNew:
+                return true
+            default:
+                return false
+            }
+        }
+
+        // Plain-text, color-free outcome label persisted into the SyncLog so an
+        // expanded Recent syncs row reads the same vocabulary as the live list
+        // (#41). The live `statusLabel(for:)` keeps its own colored Text.
+        var summaryLabel: String {
+            switch self {
+            case .pending: return "…"
+            case .written(let effort): return String(format: "Effort %.0f", effort)
+            case .writtenWithDistance(let effort): return String(format: "Effort %.0f + dist", effort)
+            case .addedDistance: return "+ Distance"
+            case .writtenAsNew(let effort): return String(format: "Created + Effort %.0f", effort)
+            case .skippedNoSufferScore: return "No score"
+            case .skippedNoMatch: return "No match"
+            case .skippedMultipleMatches: return "Multiple matches"
+            case .skippedAlreadyHasEffort: return "Already has effort"
+            case .error(let msg): return msg
+            }
+        }
     }
 
     struct Item: Identifiable, Equatable {
@@ -71,32 +101,8 @@ final class SyncOrchestrator {
         duplicateClusters = []
         lastSyncFinishedAt = nil
         defer {
-            let perItemErrors = items.filter {
-                if case .error = $0.status { return true }
-                return false
-            }.count
-            let firstItemError: String? = items.lazy.compactMap {
-                if case .error(let msg) = $0.status { return msg }
-                return nil
-            }.first
-            // Pure-overlap re-fetches stamp `.skippedAlreadyHasEffort` and
-            // would otherwise misleadingly count toward "activitiesProcessed"
-            // on the Recent syncs row (#32). Other skip kinds still count —
-            // they're signal.
-            let processed = items.filter {
-                if case .skippedAlreadyHasEffort = $0.status { return false }
-                return true
-            }.count
             let finishedAt = Date()
-            SyncLog.append(SyncLogEntry(
-                id: UUID(),
-                timestamp: finishedAt,
-                source: source,
-                activitiesProcessed: processed,
-                errorSummary: errorMessage,
-                perItemErrors: perItemErrors,
-                firstItemError: firstItemError
-            ))
+            SyncLog.append(buildLogEntry(at: finishedAt, source: source))
             // Only advance the checkpoint on clean completion — per-item
             // errors don't block, since the next sync's overlap covers them.
             if errorMessage == nil {
@@ -149,28 +155,8 @@ final class SyncOrchestrator {
         duplicateClusters = []
         lastSyncFinishedAt = nil
         defer {
-            let perItemErrors = items.filter {
-                if case .error = $0.status { return true }
-                return false
-            }.count
-            let firstItemError: String? = items.lazy.compactMap {
-                if case .error(let msg) = $0.status { return msg }
-                return nil
-            }.first
-            let processed = items.filter {
-                if case .skippedAlreadyHasEffort = $0.status { return false }
-                return true
-            }.count
             let finishedAt = Date()
-            SyncLog.append(SyncLogEntry(
-                id: UUID(),
-                timestamp: finishedAt,
-                source: source,
-                activitiesProcessed: processed,
-                errorSummary: errorMessage,
-                perItemErrors: perItemErrors,
-                firstItemError: firstItemError
-            ))
+            SyncLog.append(buildLogEntry(at: finishedAt, source: source))
             // Targeted single-activity sync — do NOT advance SyncCheckpoint.
             // Checkpoint tracks "last full window scan completed cleanly";
             // a one-off fetch by ID would lose ground for the next full
@@ -201,6 +187,48 @@ final class SyncOrchestrator {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    // Snapshot the current `items` into a persisted SyncLogEntry. Shared by
+    // both sync paths' defer blocks so the count + per-item rules stay in one
+    // place (#41 grew this past the inline duplication #32 left in place).
+    private func buildLogEntry(at finishedAt: Date, source: SyncLogEntry.Source) -> SyncLogEntry {
+        let perItemErrors = items.filter {
+            if case .error = $0.status { return true }
+            return false
+        }.count
+        let firstItemError: String? = items.lazy.compactMap {
+            if case .error(let msg) = $0.status { return msg }
+            return nil
+        }.first
+        // Pure-overlap re-fetches stamp `.skippedAlreadyHasEffort` and would
+        // otherwise misleadingly count toward "activitiesProcessed" (#32).
+        // Other skip kinds still count here — but the Recent syncs headline
+        // now derives its "synced" number from `summaries` (wasWritten), not
+        // this field, so a skip-only sync reads as 0 synced (#41).
+        let processed = items.filter {
+            if case .skippedAlreadyHasEffort = $0.status { return false }
+            return true
+        }.count
+        let summaries = items.map {
+            ItemSummary(
+                id: $0.id,
+                name: $0.activity.name,
+                startDate: $0.activity.startDate,
+                outcome: $0.status.summaryLabel,
+                wasWritten: $0.status.isWrite
+            )
+        }
+        return SyncLogEntry(
+            id: UUID(),
+            timestamp: finishedAt,
+            source: source,
+            activitiesProcessed: processed,
+            errorSummary: errorMessage,
+            perItemErrors: perItemErrors,
+            firstItemError: firstItemError,
+            items: summaries
+        )
     }
 
     private func process(
