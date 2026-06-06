@@ -141,12 +141,17 @@ struct ItemStatusTests {
         #expect(SyncOrchestrator.ItemStatus.writtenWithDistance(effort: 30).isWrite)
         #expect(SyncOrchestrator.ItemStatus.addedDistance.isWrite)
         #expect(SyncOrchestrator.ItemStatus.writtenAsNew(effort: 30).isWrite)
+        // A heal ensured effort on the native twin, so it counts toward the
+        // #41 "synced" headline (#43).
+        #expect(SyncOrchestrator.ItemStatus.healedDuplicate(effort: 30).isWrite)
 
         #expect(!SyncOrchestrator.ItemStatus.pending.isWrite)
         #expect(!SyncOrchestrator.ItemStatus.skippedNoSufferScore.isWrite)
         #expect(!SyncOrchestrator.ItemStatus.skippedNoMatch.isWrite)
         #expect(!SyncOrchestrator.ItemStatus.skippedMultipleMatches.isWrite)
         #expect(!SyncOrchestrator.ItemStatus.skippedAlreadyHasEffort.isWrite)
+        // A deferral wrote nothing — the overlap window re-fetches it (#43).
+        #expect(!SyncOrchestrator.ItemStatus.deferredAwaitingHKTwin.isWrite)
         #expect(!SyncOrchestrator.ItemStatus.error("boom").isWrite)
     }
 
@@ -156,6 +161,8 @@ struct ItemStatusTests {
         #expect(SyncOrchestrator.ItemStatus.writtenWithDistance(effort: 42).summaryLabel == "Effort 42 + dist")
         #expect(SyncOrchestrator.ItemStatus.addedDistance.summaryLabel == "+ Distance")
         #expect(SyncOrchestrator.ItemStatus.writtenAsNew(effort: 42).summaryLabel == "Created + Effort 42")
+        #expect(SyncOrchestrator.ItemStatus.deferredAwaitingHKTwin.summaryLabel == "Deferred (awaiting HK)")
+        #expect(SyncOrchestrator.ItemStatus.healedDuplicate(effort: 42).summaryLabel == "Removed dup + Effort 42")
         #expect(SyncOrchestrator.ItemStatus.skippedNoSufferScore.summaryLabel == "No score")
         #expect(SyncOrchestrator.ItemStatus.skippedNoMatch.summaryLabel == "No match")
         #expect(SyncOrchestrator.ItemStatus.skippedMultipleMatches.summaryLabel == "Multiple matches")

@@ -120,6 +120,43 @@ final class HealthKitManager {
         workout.sourceRevision.source.name
     }
 
+    // Whether this app authored the workout (vs the source app's native twin).
+    // Compares bundle identifiers — HKSource.default() is the current app's
+    // source. Drives the #43 heal's native-vs-our-copy distinction.
+    func isAppAuthored(_ workout: HKWorkout) -> Bool {
+        workout.sourceRevision.source.bundleIdentifier == HKSource.default().bundleIdentifier
+    }
+
+    // Delete a workout this app authored along with the samples it owns — the
+    // HR / energy / distance collected into it, plus any related effort. Used to
+    // heal a duplicate our create path authored before the source app's native
+    // twin landed (#43). Guarded to our own workouts: #12 blocks deleting foreign
+    // samples, and #37's retired cleanup deleted app-authored copies this way.
+    // Deleting only the workout shell would orphan its samples, which keep
+    // double-counting in the data-type rollups (#37).
+    func deleteWorkoutWithSamples(_ workout: HKWorkout) async throws {
+        guard isAppAuthored(workout) else {
+            throw WriteWorkoutError.notAppAuthored
+        }
+        let owned = HKQuery.predicateForObjects(from: workout)
+        for type in [
+            HKQuantityType(.heartRate),
+            HKQuantityType(.activeEnergyBurned),
+            HKQuantityType(.distanceCycling),
+            HKQuantityType(.distanceWalkingRunning),
+            HKQuantityType(.distanceSwimming),
+        ] {
+            try await healthStore.deleteObjects(of: type, predicate: owned)
+        }
+        // Effort is related to the workout rather than collected into it, so it
+        // needs its own relation predicate to avoid leaving an orphan behind.
+        let effortRelated = HKQuery.predicateForWorkoutEffortSamplesRelated(
+            workout: workout, activity: nil
+        )
+        _ = try? await healthStore.deleteObjects(of: effortType, predicate: effortRelated)
+        try await healthStore.delete([workout])
+    }
+
     // The workout's own distance in meters for the type-appropriate distance
     // sample, nil when it carries none or read access is missing. Display-only
     // corroboration on the duplicate list (#39).
@@ -178,6 +215,7 @@ final class HealthKitManager {
     enum WriteWorkoutError: LocalizedError {
         case unmappedSportType(String)
         case builderReturnedNil
+        case notAppAuthored
 
         var errorDescription: String? {
             switch self {
@@ -185,6 +223,8 @@ final class HealthKitManager {
                 return "No HKWorkoutActivityType mapping for Strava sport type '\(s)'."
             case .builderReturnedNil:
                 return "HKWorkoutBuilder.finishWorkout returned nil — workout not saved."
+            case .notAppAuthored:
+                return "Refused to delete a workout this app did not author."
             }
         }
     }
