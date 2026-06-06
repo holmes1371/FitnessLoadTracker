@@ -410,8 +410,17 @@ final class SyncOrchestrator {
             in: candidates, targetType: targetType,
             stravaStart: activity.startDate, stravaActivityId: activity.id
         ) else { return }
+        let deletedId = workouts[ourCopy].uuid
         try await healthKit.deleteWorkoutWithSamples(workouts[ourCopy])
         items[itemIndex].status = .healedDuplicate(effort: effort)
+        // collectDuplicates ran before the delete, so the #39 "Possible duplicates"
+        // cluster still lists the copy we just removed. Drop it so a healed ride
+        // doesn't show a ghost duplicate; a cluster left with fewer than two
+        // members is no longer a duplicate.
+        duplicateClusters = duplicateClusters.compactMap { cluster in
+            let remaining = cluster.members.filter { $0.id != deletedId }
+            return remaining.count >= 2 ? DuplicateCluster(members: remaining) : nil
+        }
     }
 
     // Cluster the workouts in this activity's window into possible duplicates
