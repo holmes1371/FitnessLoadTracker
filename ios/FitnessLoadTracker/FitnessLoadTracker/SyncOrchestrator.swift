@@ -281,30 +281,45 @@ final class SyncOrchestrator {
                     activityType: $0.workoutActivityType
                 )
             }
+            let reconcileCandidates = workouts.map {
+                ReconcileCandidate(
+                    startDate: $0.startDate,
+                    activityType: $0.workoutActivityType,
+                    isAppAuthored: healthKit.isAppAuthored($0),
+                    isDistanceProxy: healthKit.isDistanceProxy($0),
+                    stravaActivityId: healthKit.stravaActivityId(of: $0)
+                )
+            }
+            // nil when the sport type isn't in the HK activity-type map.
+            let mappedType = Matching.hkActivityType(forStravaSportType: activity.sportType)
             switch Matching.findMatch(for: activity, in: candidates) {
             case .matched(let i):
                 try await handleMatchedWorkout(
                     itemIndex: itemIndex, workout: workouts[i],
                     effort: effort, activity: activity, healthKit: healthKit
                 )
+                // C — the native twin wins (#43). When the strict match landed on
+                // a foreign twin (the common WorkOutDoors case: twin ≈ elapsed_time
+                // so it matches the Strava activity directly) and we also authored
+                // a copy of this ride on an earlier racing sync, effort is now on
+                // the twin; delete our copy. Skip when the match IS our own copy —
+                // no twin present, nothing to heal, and we must not delete it.
+                if !healthKit.isAppAuthored(workouts[i]), let targetType = mappedType {
+                    try await healOwnCopyIfPresent(
+                        itemIndex: itemIndex, candidates: reconcileCandidates,
+                        workouts: workouts, targetType: targetType,
+                        activity: activity, effort: effort, healthKit: healthKit
+                    )
+                }
             case .noMatch:
                 // Matching.findMatch returns .noMatch for two distinct reasons:
                 // (1) sport type isn't in the HK activity-type map; we can't
                 // create a workout either, so stay skipped.
                 // (2) sport type is mapped but no HK twin exists within
                 // tolerance — this is the create-and-attach path.
-                guard let targetType = Matching.hkActivityType(forStravaSportType: activity.sportType) else {
+                guard let targetType = mappedType else {
                     items[itemIndex].status = .skippedNoMatch
                     return
-                }
-                let reconcileCandidates = workouts.map {
-                    ReconcileCandidate(
-                        startDate: $0.startDate,
-                        activityType: $0.workoutActivityType,
-                        isAppAuthored: healthKit.isAppAuthored($0),
-                        isDistanceProxy: healthKit.isDistanceProxy($0),
-                        stravaActivityId: healthKit.stravaActivityId(of: $0)
-                    )
                 }
                 // B — a foreign twin (e.g. WorkOutDoors) may be present but was
                 // rejected by the strict matcher on duration (moving_time vs
@@ -322,16 +337,12 @@ final class SyncOrchestrator {
                         itemIndex: itemIndex, workout: twin,
                         effort: effort, activity: activity, healthKit: healthKit
                     )
-                    // C — the native twin wins. If we also authored a copy of this
-                    // ride on an earlier racing sync, effort is now on the twin;
-                    // delete our copy + its samples so the ride stops double-counting.
-                    if let ourCopy = CreatePathReconciliation.appAuthoredCopyIndex(
-                        in: reconcileCandidates, targetType: targetType,
-                        stravaStart: activity.startDate, stravaActivityId: activity.id
-                    ) {
-                        try await healthKit.deleteWorkoutWithSamples(workouts[ourCopy])
-                        items[itemIndex].status = .healedDuplicate(effort: effort)
-                    }
+                    // C — the native twin wins; delete our own copy if present (#43).
+                    try await healOwnCopyIfPresent(
+                        itemIndex: itemIndex, candidates: reconcileCandidates,
+                        workouts: workouts, targetType: targetType,
+                        activity: activity, effort: effort, healthKit: healthKit
+                    )
                     return
                 }
                 // No foreign twin. A workout we authored on a prior sync is usually
@@ -378,6 +389,29 @@ final class SyncOrchestrator {
         } catch {
             items[itemIndex].status = .error(error.localizedDescription)
         }
+    }
+
+    // C (#43) — a foreign/native twin has just received effort. If we also
+    // authored a copy of this ride on an earlier racing sync, the native twin
+    // wins: delete our copy + its samples so the ride stops double-counting, and
+    // stamp the healed status. The caller guarantees the just-attached workout is
+    // the foreign twin (contract item 3 — a qualifying twin exists), so the only
+    // candidate `appAuthoredCopyIndex` can return is our own copy, never the twin.
+    private func healOwnCopyIfPresent(
+        itemIndex: Int,
+        candidates: [ReconcileCandidate],
+        workouts: [HKWorkout],
+        targetType: HKWorkoutActivityType,
+        activity: StravaActivity,
+        effort: Double,
+        healthKit: HealthKitManager
+    ) async throws {
+        guard let ourCopy = CreatePathReconciliation.appAuthoredCopyIndex(
+            in: candidates, targetType: targetType,
+            stravaStart: activity.startDate, stravaActivityId: activity.id
+        ) else { return }
+        try await healthKit.deleteWorkoutWithSamples(workouts[ourCopy])
+        items[itemIndex].status = .healedDuplicate(effort: effort)
     }
 
     // Cluster the workouts in this activity's window into possible duplicates
