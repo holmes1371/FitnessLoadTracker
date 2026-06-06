@@ -153,7 +153,7 @@ final class HealthKitManager {
         let effortRelated = HKQuery.predicateForWorkoutEffortSamplesRelated(
             workout: workout, activity: nil
         )
-        try? await healthStore.deleteObjects(of: effortType, predicate: effortRelated)
+        _ = try? await healthStore.deleteObjects(of: effortType, predicate: effortRelated)
         try await healthStore.delete([workout])
     }
 
