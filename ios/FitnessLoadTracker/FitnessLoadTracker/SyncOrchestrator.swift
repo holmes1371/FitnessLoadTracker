@@ -15,6 +15,13 @@ final class SyncOrchestrator {
         case writtenWithDistance(effort: Double)
         case addedDistance
         case writtenAsNew(effort: Double)
+        // The native twin was missing at create time and the ride is recent, so
+        // we deferred rather than author a duplicate; the overlap window re-fetches
+        // it once the source app writes its workout to HK (#43, workstream A).
+        case deferredAwaitingHKTwin
+        // A pre-existing app-authored copy was deleted because the source app's
+        // native twin landed; effort lives on the twin (#43, workstream C).
+        case healedDuplicate(effort: Double)
         case skippedNoSufferScore
         case skippedNoMatch
         case skippedMultipleMatches
@@ -26,7 +33,7 @@ final class SyncOrchestrator {
         // skips and errors don't count as synced.
         var isWrite: Bool {
             switch self {
-            case .written, .writtenWithDistance, .addedDistance, .writtenAsNew:
+            case .written, .writtenWithDistance, .addedDistance, .writtenAsNew, .healedDuplicate:
                 return true
             default:
                 return false
@@ -43,6 +50,8 @@ final class SyncOrchestrator {
             case .writtenWithDistance(let effort): return String(format: "Effort %.0f + dist", effort)
             case .addedDistance: return "+ Distance"
             case .writtenAsNew(let effort): return String(format: "Created + Effort %.0f", effort)
+            case .deferredAwaitingHKTwin: return "Deferred (awaiting HK)"
+            case .healedDuplicate(let effort): return String(format: "Removed dup + Effort %.0f", effort)
             case .skippedNoSufferScore: return "No score"
             case .skippedNoMatch: return "No match"
             case .skippedMultipleMatches: return "Multiple matches"
@@ -74,6 +83,12 @@ final class SyncOrchestrator {
     // "No new activities since [time]" message shows the previous sync's
     // time, not the just-completed sync's time (#30).
     var priorCheckpoint: Date?
+
+    // A ride that ended less than this ago with no HK twin is deferred, not
+    // created — giving the watch→phone sync time to land the source app's
+    // workout so the next sync matches it instead of authoring a duplicate
+    // (#43, workstream A). Hidden constant for now; revisit after live data.
+    static let createGracePeriod: TimeInterval = 3 * 60 * 60
 
     private let client: StravaClient
 
@@ -278,21 +293,69 @@ final class SyncOrchestrator {
                 // create a workout either, so stay skipped.
                 // (2) sport type is mapped but no HK twin exists within
                 // tolerance — this is the create-and-attach path.
-                guard Matching.hkActivityType(forStravaSportType: activity.sportType) != nil else {
+                guard let targetType = Matching.hkActivityType(forStravaSportType: activity.sportType) else {
                     items[itemIndex].status = .skippedNoMatch
                     return
                 }
-                // A workout we authored on a prior sync is usually present here
-                // but rejected by Matching — we store moving_time as the
-                // workout's duration while Matching compares elapsed_time, so
-                // outdoor rides with stops fall outside the 60s tolerance.
-                // Dedup by Strava id so re-syncs/backfill ensure effort on the
-                // existing workout instead of creating a duplicate (#37).
+                let reconcileCandidates = workouts.map {
+                    ReconcileCandidate(
+                        startDate: $0.startDate,
+                        activityType: $0.workoutActivityType,
+                        isAppAuthored: healthKit.isAppAuthored($0),
+                        isDistanceProxy: healthKit.isDistanceProxy($0),
+                        stravaActivityId: healthKit.stravaActivityId(of: $0)
+                    )
+                }
+                // B — a foreign twin (e.g. WorkOutDoors) may be present but was
+                // rejected by the strict matcher on duration (moving_time vs
+                // elapsed_time). Suppress the create path on start-proximity alone.
+                let foreignTwins = CreatePathReconciliation.foreignTwinIndices(
+                    in: reconcileCandidates, targetType: targetType, stravaStart: activity.startDate
+                )
+                if foreignTwins.count > 1 {
+                    items[itemIndex].status = .skippedMultipleMatches
+                    return
+                }
+                if foreignTwins.count == 1 {
+                    let twin = workouts[foreignTwins[0]]
+                    try await handleMatchedWorkout(
+                        itemIndex: itemIndex, workout: twin,
+                        effort: effort, activity: activity, healthKit: healthKit
+                    )
+                    // C — the native twin wins. If we also authored a copy of this
+                    // ride on an earlier racing sync, effort is now on the twin;
+                    // delete our copy + its samples so the ride stops double-counting.
+                    if let ourCopy = CreatePathReconciliation.appAuthoredCopyIndex(
+                        in: reconcileCandidates, targetType: targetType,
+                        stravaStart: activity.startDate, stravaActivityId: activity.id
+                    ) {
+                        try await healthKit.deleteWorkoutWithSamples(workouts[ourCopy])
+                        items[itemIndex].status = .healedDuplicate(effort: effort)
+                    }
+                    return
+                }
+                // No foreign twin. A workout we authored on a prior sync is usually
+                // present here but rejected by Matching — we store moving_time as
+                // the workout's duration while Matching compares elapsed_time, so
+                // outdoor rides with stops fall outside the 60s tolerance. Dedup by
+                // Strava id so re-syncs/backfill ensure effort on the existing
+                // workout instead of creating a duplicate (#37). Reached only when
+                // no native twin exists, so the twin always wins over our copy (#43).
                 if let existing = workouts.first(where: { healthKit.stravaActivityId(of: $0) == activity.id }) {
                     try await handleMatchedWorkout(
                         itemIndex: itemIndex, workout: existing,
                         effort: effort, activity: activity, healthKit: healthKit
                     )
+                    return
+                }
+                // A — defer rather than create if the ride is recent and has no HK
+                // twin yet; the source app's workout has probably not synced from
+                // the watch. The 24h overlap window re-fetches it next sync (#43).
+                let activityEnd = activity.startDate.addingTimeInterval(TimeInterval(activity.elapsedTime))
+                if CreatePathReconciliation.shouldDeferAwaitingTwin(
+                    activityEnd: activityEnd, now: Date(), gracePeriod: Self.createGracePeriod
+                ) {
+                    items[itemIndex].status = .deferredAwaitingHKTwin
                     return
                 }
                 let detail: StravaActivityDetail

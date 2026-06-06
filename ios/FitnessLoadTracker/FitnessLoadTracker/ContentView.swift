@@ -249,6 +249,10 @@ struct ContentView: View {
             Text("+ Distance").foregroundStyle(.green)
         case .writtenAsNew(let effort):
             Text("Created + Effort \(effort, specifier: "%.0f")").foregroundStyle(.green)
+        case .deferredAwaitingHKTwin:
+            Text("Deferred (awaiting HK)").foregroundStyle(.orange)
+        case .healedDuplicate(let effort):
+            Text("Removed dup + Effort \(effort, specifier: "%.0f")").foregroundStyle(.green)
         case .skippedNoSufferScore:
             Text("No score").foregroundStyle(.secondary)
         case .skippedNoMatch:
