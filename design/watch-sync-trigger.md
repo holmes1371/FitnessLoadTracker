@@ -25,8 +25,21 @@ can't reliably supply on its own:
    built to run on watchOS.
 
 So: **no token ever leaves the phone, no sync logic is ported.** The watch app
-is a button + a complication + a thin `WCSession` message. This keeps the
-security surface identical to today.
+is a button + a thin `WCSession` message. This keeps the security surface
+identical to today.
+
+### Why not standalone (watch syncs alone, tokens on the watch)
+
+The only reason to transfer the Strava tokens to the watch is to let it sync
+with the **phone absent entirely** (watch alone on cellular). We reject that —
+not just because it's harder, but because it's structurally wrong for this
+pipeline: the sync's job is to reconcile Strava activities against the
+**phone's** HealthKit store and write effort scores **there**. The watch has its
+own separate HealthKit store that syncs up to the phone; it can't see the full
+matching picture the matcher/dedup/heal logic depends on. Even with the tokens,
+a watch-alone sync couldn't do the reconciliation correctly. Tom has phone
+cellular and the phone is paired/reachable from the wrist in practice, so the
+"phone absent" case barely exists for him.
 
 ## Transport: WatchConnectivity (`WCSession`)
 
@@ -50,15 +63,16 @@ next real sync rather than running immediately. The **reliable** UX is
 post-workout situation. v1 optimizes for the reachable path and treats the
 queued path as best-effort.
 
-## Watch UI scope (decided: button + complication)
+## Watch UI scope (decided: app-grid icon, no complication)
 
 - **App:** a single-screen watchOS SwiftUI app — one "Sync now" button, a status
   line (last result + last-sync time), and an in-flight spinner. Mirrors the
   phone's sync section, stripped to one action.
-- **Complication:** a watch-face complication for one-tap launch into the watch
-  app. Shows last-sync recency (e.g. "2h ago") on faces that allow text.
-  Implemented with WidgetKit (`AccessoryRectangular` / `AccessoryCircular` /
-  `AccessoryCorner`), the modern complication path for current watchOS.
+- **Launch surface:** the watch app's **app-grid icon** (every watch app gets
+  one automatically). Tom uses a modular face on the Ultra 2 but explicitly does
+  **not** want a watch-face complication — tapping the app icon is enough. This
+  drops the WidgetKit complication target entirely. A complication remains a
+  possible follow-up if he later wants last-sync recency on the face itself.
 
 ## Phone-side changes
 
@@ -83,11 +97,11 @@ HealthKit access, entitlements, and consent stay phone-only and unchanged.
 
 ### In
 
-- New **watchOS app target** + **WidgetKit complication target** in the Xcode
-  project (`FitnessLoadTracker.xcodeproj`, objectVersion 77, file-system
-  synchronized groups).
-- Watch app: SwiftUI single screen (button + status line + spinner).
-- Complication: WidgetKit accessory families with last-sync recency.
+- One new **watchOS app target** in the Xcode project
+  (`FitnessLoadTracker.xcodeproj`, objectVersion 77, file-system synchronized
+  groups). No complication target.
+- Watch app: SwiftUI single screen (button + status line + spinner), launched
+  from its app-grid icon.
 - `WCSession` plumbing: watch sender + phone delegate, reachable
   (`sendMessage`) and queued (`transferUserInfo`) paths.
 - Phone: `SyncLogEntry.Source.watch`, session activation, message handler that
@@ -107,8 +121,10 @@ HealthKit access, entitlements, and consent stay phone-only and unchanged.
 - **Rich watch UI** (per-activity breakdown, sync history on the wrist) — the
   phone owns that; the watch shows one headline result. Revisit if Tom wants more.
 - **Pushing sync results to the watch proactively** (phone → watch on every BG
-  sync) — v1 only replies to a watch-initiated request. A live complication that
-  always reflects the latest phone sync is a possible follow-up.
+  sync) — v1 only replies to a watch-initiated request.
+- **Watch-face complication** — Tom doesn't want one; the app-grid icon is the
+  launch surface. A complication showing last-sync recency is a possible
+  follow-up, and would pair with proactive push above.
 - **Background refresh on the watch** — the watch never syncs on its own.
 
 ## Locked decisions
@@ -123,15 +139,13 @@ HealthKit access, entitlements, and consent stay phone-only and unchanged.
 
 ## Open questions
 
-- **Complication families** — which watch-face slots does Tom actually use?
-  Pick the 2–3 families matching his faces rather than implementing all of them.
 - **Queued-path UX** — is "queued, will sync when phone is reachable" acceptable
   wording when `isReachable` is false, or does Tom want the watch to surface that
   it didn't run live? Lean: show "queued" honestly.
-- **Min deployment target** — the watch target's minimum watchOS version (drives
-  which complication API is available). Set to match Tom's watch.
-- **App naming / bundle id** for the watch + complication targets (must nest
-  under the phone app's bundle id).
+- **Min deployment target** — the watch target's minimum watchOS version. Set to
+  match the Ultra 2 (current watchOS).
+- **App naming / bundle id** for the watch target (must nest under the phone
+  app's bundle id).
 
 ## Test fixtures needed
 
