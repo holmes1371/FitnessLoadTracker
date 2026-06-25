@@ -32,7 +32,6 @@ struct StravaActivityTests {
         #expect(a.sportType == "Ride")
         #expect(a.elapsedTime == 3600)
         #expect(a.movingTime == 3550)
-        #expect(a.distance == 25340.5)
         #expect(a.sufferScore == 87.5)
     }
 

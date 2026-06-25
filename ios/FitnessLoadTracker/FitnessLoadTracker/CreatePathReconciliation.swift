@@ -13,7 +13,7 @@
 //    C — identify our own app-authored copy of a ride that already has a native
 //        twin, so the heal can delete it (native twin always wins).
 //  Operates on plain structs so the logic is unit-testable without HKWorkout —
-//  same pattern as Matching / DuplicateDetection / DistanceEnrichment.
+//  same pattern as Matching / DuplicateDetection.
 //
 
 import Foundation

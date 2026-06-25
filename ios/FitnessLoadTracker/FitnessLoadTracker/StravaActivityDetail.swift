@@ -74,7 +74,6 @@ extension StravaActivityDetail {
             startDate: startDate,
             elapsedTime: elapsedTime,
             movingTime: movingTime,
-            distance: distance,
             sufferScore: sufferScore
         )
     }
