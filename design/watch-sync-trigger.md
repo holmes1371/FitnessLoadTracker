@@ -53,9 +53,28 @@ cellular and the phone is paired/reachable from the wrist in practice, so the
   `transferUserInfo` (queued, delivered when the phone wakes). The watch then
   shows "queued" rather than a live result, since there's no synchronous reply.
 
-### Caveat to surface to Tom
+### Watch cellular does NOT extend this (important — common misconception)
 
-`transferUserInfo` can wake the phone app in the **background**, where the
+`WCSession` is **proximity-based**: it connects over Bluetooth (phone within
+range) or both devices on the same Wi-Fi network. It does **not** tunnel over the
+internet to a distant phone. Cellular on the Ultra 2 gives the *watch* its own
+internet (Strava, Apple services, a hypothetical server) — it is **not** a remote
+link to the paired phone. So "trigger from anywhere with the phone left at home"
+is **out of reach for this design**, and adding watch cellular changes nothing.
+The reachable path requires the phone nearby (or same Wi-Fi) — which is exactly
+the post-workout situation, so this is fine for the motivating use case.
+
+A true from-anywhere trigger would be a different, much bigger build: watch (on
+cellular) → our own small server → **silent push (APNs)** to wake the phone and
+run the sync. That's a backend + push-notification project; deferred unless Tom
+confirms "phone left behind" is a real scenario he needs.
+
+### The watch's lock state is not the blocker — the phone's is
+
+The watch is unlocked whenever it's on-wrist (wrist detection), so tapping the
+button is never gated in practice. The lock state that matters for the sync is
+the **phone's**: `transferUserInfo` can wake the phone app in the **background**,
+where the
 existing `BackgroundSync` guard bails when HealthKit is locked
 ("Protected health data is inaccessible"). So the queued path may defer to the
 next real sync rather than running immediately. The **reliable** UX is
