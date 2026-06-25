@@ -12,8 +12,6 @@ final class SyncOrchestrator {
     enum ItemStatus: Equatable {
         case pending
         case written(effort: Double)
-        case writtenWithDistance(effort: Double)
-        case addedDistance
         case writtenAsNew(effort: Double)
         // The native twin was missing at create time and the ride is recent, so
         // we deferred rather than author a duplicate; the overlap window re-fetches
@@ -33,7 +31,7 @@ final class SyncOrchestrator {
         // skips and errors don't count as synced.
         var isWrite: Bool {
             switch self {
-            case .written, .writtenWithDistance, .addedDistance, .writtenAsNew, .healedDuplicate:
+            case .written, .writtenAsNew, .healedDuplicate:
                 return true
             default:
                 return false
@@ -47,8 +45,6 @@ final class SyncOrchestrator {
             switch self {
             case .pending: return "…"
             case .written(let effort): return String(format: "Effort %.0f", effort)
-            case .writtenWithDistance(let effort): return String(format: "Effort %.0f + dist", effort)
-            case .addedDistance: return "+ Distance"
             case .writtenAsNew(let effort): return String(format: "Created + Effort %.0f", effort)
             case .deferredAwaitingHKTwin: return "Deferred (awaiting HK)"
             case .healedDuplicate(let effort): return String(format: "Removed dup + Effort %.0f", effort)
@@ -267,10 +263,11 @@ final class SyncOrchestrator {
             let window: TimeInterval = 5 * 60
             let start = activity.startDate.addingTimeInterval(-window)
             let end = activity.startDate.addingTimeInterval(TimeInterval(activity.elapsedTime) + window)
-            // Exclude our own distance-proxy workouts (#37) — they're cycling
-            // workouts near the ride's start, and leaving them in the candidate
-            // pool would risk a multipleMatches skip or attaching effort to the
-            // proxy instead of the real Peloton workout.
+            // Exclude legacy distance-proxy workouts (#37, removed in #49) —
+            // they're cycling workouts near the ride's start, so leaving them in
+            // the candidate pool would risk a multipleMatches skip or attaching
+            // effort to the proxy instead of the real Peloton workout. We no
+            // longer create proxies, but old ones persist until manually deleted.
             let workouts = try await healthKit.workouts(in: start...end)
                 .filter { !healthKit.isDistanceProxy($0) }
             collectDuplicates(in: workouts, healthKit: healthKit)
@@ -296,7 +293,7 @@ final class SyncOrchestrator {
             case .matched(let i):
                 try await handleMatchedWorkout(
                     itemIndex: itemIndex, workout: workouts[i],
-                    effort: effort, activity: activity, healthKit: healthKit
+                    effort: effort, healthKit: healthKit
                 )
                 // C — the native twin wins (#43). When the strict match landed on
                 // a foreign twin (the common WorkOutDoors case: twin ≈ elapsed_time
@@ -335,7 +332,7 @@ final class SyncOrchestrator {
                     let twin = workouts[foreignTwins[0]]
                     try await handleMatchedWorkout(
                         itemIndex: itemIndex, workout: twin,
-                        effort: effort, activity: activity, healthKit: healthKit
+                        effort: effort, healthKit: healthKit
                     )
                     // C — the native twin wins; delete our own copy if present (#43).
                     try await healOwnCopyIfPresent(
@@ -355,7 +352,7 @@ final class SyncOrchestrator {
                 if let existing = workouts.first(where: { healthKit.stravaActivityId(of: $0) == activity.id }) {
                     try await handleMatchedWorkout(
                         itemIndex: itemIndex, workout: existing,
-                        effort: effort, activity: activity, healthKit: healthKit
+                        effort: effort, healthKit: healthKit
                     )
                     return
                 }
@@ -444,68 +441,22 @@ final class SyncOrchestrator {
         }
     }
 
-    // Shared by the matched path and the create-path dedup. Effort and distance
-    // are independent and each idempotent: a ride synced before #37 already has
-    // effort but may still be missing distance, so the effort-dedup must not
-    // short-circuit the distance write (the backfill case).
+    // Shared by the matched path and the create-path dedup. Ensures effort on
+    // the matched workout, idempotently: a ride that already carries effort is
+    // left untouched and reported as such.
     private func handleMatchedWorkout(
         itemIndex: Int,
         workout: HKWorkout,
         effort: Double,
-        activity: StravaActivity,
         healthKit: HealthKitManager
     ) async throws {
         let hadEffort = try await healthKit.hasEffortScore(for: workout)
         if !hadEffort {
             try await healthKit.writeEffort(effort, on: workout)
         }
-        let wroteDistance = try await enrichDistanceIfNeeded(
-            activity: activity, workout: workout, healthKit: healthKit
-        )
-        items[itemIndex].status = Self.matchedStatus(
-            wroteEffort: !hadEffort, effort: effort, wroteDistance: wroteDistance
-        )
+        items[itemIndex].status = hadEffort
+            ? .skippedAlreadyHasEffort
+            : .written(effort: effort)
     }
 
-    // Author the Strava equivalent distance for an indoor ride whose HK twin
-    // carries none (#37). The cheap activity-type/distance pre-checks skip the
-    // HK dedup query for the common non-cycling case; the actual decision still
-    // funnels through DistanceEnrichment.shouldWrite. Returns whether a sample
-    // was written.
-    private func enrichDistanceIfNeeded(
-        activity: StravaActivity,
-        workout: HKWorkout,
-        healthKit: HealthKitManager
-    ) async throws -> Bool {
-        guard workout.workoutActivityType == .cycling, activity.distance > 0 else { return false }
-        let hasNative = healthKit.workoutHasNativeCyclingDistance(workout)
-        let alreadyWritten = try await healthKit.hasDistanceProxyWorkout(
-            stravaActivityId: activity.id, in: workout.startDate...workout.endDate
-        )
-        guard DistanceEnrichment.shouldWrite(
-            activityType: workout.workoutActivityType,
-            stravaDistanceMeters: activity.distance,
-            workoutHasNativeDistance: hasNative,
-            alreadyWrittenByUs: alreadyWritten
-        ) else { return false }
-        try await healthKit.writeDistanceProxyWorkout(
-            meters: activity.distance,
-            start: workout.startDate,
-            stravaActivityId: activity.id
-        )
-        return true
-    }
-
-    private static func matchedStatus(
-        wroteEffort: Bool,
-        effort: Double,
-        wroteDistance: Bool
-    ) -> ItemStatus {
-        switch (wroteEffort, wroteDistance) {
-        case (true, true):   return .writtenWithDistance(effort: effort)
-        case (true, false):  return .written(effort: effort)
-        case (false, true):  return .addedDistance
-        case (false, false): return .skippedAlreadyHasEffort
-        }
-    }
 }

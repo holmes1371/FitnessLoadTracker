@@ -22,7 +22,6 @@ struct MatchingTests {
             startDate: startDate,
             elapsedTime: elapsedTime,
             movingTime: elapsedTime,
-            distance: 0,
             sufferScore: 50
         )
     }
